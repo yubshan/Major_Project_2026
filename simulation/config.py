@@ -15,4 +15,6 @@ robot_config = {
         "height": 0.55
     }
 }
+robot_max_speed = 4
+robot_max_turning_speed = 3
 
