@@ -1,107 +1,157 @@
-import os 
+import os
 import pygame
 import math
+from config import screen_width, screen_height, robot_config, ppm
 
-# --- 1. SIMULATION SCALE AND SETUP ---
-PPM = 150  # Pixels Per Meter (1 meter = 150 pixels)
+current_dir = os.path.dirname(__file__)
+logo_image_path = os.path.join(current_dir, "assets", "logo.bmp")
 
 pygame.init()
-screen = pygame.display.set_mode((800, 800))
+
+
+
+screen = pygame.display.set_mode((screen_width, screen_height))
 pygame.display.set_caption("Autonomous-Rescue-Robot-Simulator")
+
+# Create a clock object to control the frame rate safely
 clock = pygame.time.Clock()
 
-# --- 2. ROBOT PHYSICAL STATE (In Meters and Radians) ---
-# Start the robot at the world center (0, 0)
-world_x = 0.0      
-world_y = 0.0
-theta = 0.0        # Orientation angle in radians (0 means facing East/Right)
+try:
+    app_icon = pygame.image.load(logo_image_path)
+    app_icon_scaled = pygame.transform.scale(app_icon, (32, 32))
+    pygame.display.set_icon(app_icon_scaled)
+except pygame.error as e:
+    print(f"Warning: The Error we got: {e}")
+    print("using default window icon.")
 
-# Robot control speeds
-linear_velocity = 0.0   # Forward/backward speed (meters per second)
-angular_velocity = 0.0  # Turning speed (radians per second)
 
-# Max capabilities of our motors
-MAX_LINEAR_SPEED = 1.2   # 1.2 meters per second forward
-MAX_TURNING_SPEED = 3.0  # 3.0 radians per second rotation
 
-def drawRobot(w_x, w_y, heading_rad):
-    # Create the unrotated base model surface (facing up by default in your design)
-    # To align with math standard (0 rad = East/Right), we design it facing Right, 
-    # or we adjust the rotation angle. Let's adjust the angle for your exact sprite design.
-    base_surface = pygame.Surface((60, 60), pygame.SRCALPHA)
+def MeterToPixel(length, breath, ppm):
+    return length * ppm ,  breath * ppm
 
-    wheel_color = (45, 45, 45)   
-    chasis_color = (255, 90, 0) 
-    white = (255, 255, 255)
+def WorldToScreen(w_x, w_y, ppm, screen_width, screen_height):
+    x_screen = int(ppm * w_x) + screen_width // 2
+    y_screen = screen_height // 2 -int(ppm * w_y) 
 
-    # Your custom drawing shapes
-    pygame.draw.rect(base_surface, wheel_color, (2, 4, 10, 52), border_radius=3)
-    pygame.draw.rect(base_surface, wheel_color, (48, 4, 10, 52), border_radius=3)
-    pygame.draw.rect(base_surface, chasis_color, (12, 8, 36, 44), border_radius=6)
-    pygame.draw.rect(base_surface, white, (27, 22, 6, 16)) 
-    pygame.draw.rect(base_surface, white, (22, 27, 16, 6)) 
+    return x_screen, y_screen
 
-    # Pygame rotates counter-clockwise in degrees.
-    # Your original drawing faces "Up" (-Y in screen space), which is mathematically +90 degrees.
-    # We subtract 90 to align your graphic perfectly with the physics engine direction.
-    heading_degrees = math.degrees(heading_rad) - 90
-    rotated_surface = pygame.transform.rotate(base_surface, heading_degrees)
+def ScreenToWorld(s_x, s_y, ppm, screen_width, screen_height):
+    x_world = (s_x - screen_width // 2) / ppm
+    y_world = (s_y + screen_height // 2) / ppm
 
-    # Convert real-world meters to screen coordinates (Origin at screen center 400, 400)
-    screen_x = int(400 + w_x * PPM)
-    screen_y = int(400 - w_y * PPM) # Negative because screen Y goes down, world Y goes up
+    return x_world, y_world
 
-    # Get the bounding rectangle of the rotated surface and center it on our coordinates
-    # This prevents the robot from wobbling violently when it spins
-    new_rect = rotated_surface.get_rect(center=(screen_x, screen_y))
+def DrawRobot(x_position, y_position, turningRadius , ppm,screen_width, screen_height, robot_config):
+
+    ##robot dimension in meter
+    robot_width_m = robot_config["robot_dimension"]["width"]
+    robot_height_m = robot_config["robot_dimension"]["height"]
+    chasis_width_m = robot_config["robot_chasis"]["width"]
+    chasis_height_m = robot_config["robot_chasis"]["height"]
+    wheel_width_m = robot_config["robot_wheel"]["width"]
+    wheel_height_m = robot_config["robot_wheel"]["height"]
+
     
-    screen.blit(rotated_surface, new_rect.topleft)
+    ## robot dimensions to pixel
+    #dimension 
+    robot_width_px, robot_height_px =  MeterToPixel(robot_width_m, robot_height_m, ppm )
+    #chasis
+    chasis_width_px, chasis_height_px = MeterToPixel(chasis_width_m,chasis_height_m, ppm)
+    #wheel 
+    wheel_width_px, wheel_height_px = MeterToPixel(wheel_width_m, wheel_height_m, ppm)
+    # rescue symbol
+    c_l, c_b = 16, 6
 
+
+    ## robot colors
+    wheel_color = (45, 45, 45)   #gray
+    chasis_color = (255, 90, 0) #yellow
+    white= (255,255, 255)
+
+    ## robot surface
+    combined_object = pygame.Surface((robot_width_px,robot_height_px), pygame.SRCALPHA)
+
+    ## robot component position on robot surface
+    chasis_x = (robot_width_px // 2 - chasis_width_px // 2 )
+    chasis_y = (robot_height_px // 2 - chasis_height_px // 2 )
+    l_wheel_x = chasis_x - int(wheel_width_px)
+    lr_wheel_y = ((robot_height_px//2) - (wheel_height_px // 2))
+    r_wheel_x = chasis_x + int(chasis_width_px)
+    line_x = (chasis_x + int(chasis_width_px) // 2 ) - c_b // 2
+    line_y = (chasis_y + int(chasis_height_px) // 2 )  - c_l // 2
+
+    ## Robot Graphics
+    #mainBody
+    pygame.draw.rect(combined_object, chasis_color, (chasis_x, chasis_y, chasis_width_px, chasis_height_px), border_radius=6)
+    
+    # #Two wheel
+    pygame.draw.rect(combined_object, wheel_color, (l_wheel_x, lr_wheel_y ,wheel_width_px, wheel_height_px), border_radius=3)
+    pygame.draw.rect(combined_object, wheel_color, (r_wheel_x, lr_wheel_y  ,wheel_width_px, wheel_height_px), border_radius=3)
+
+    # #rescue symbol 
+    pygame.draw.rect(combined_object, white, (line_x, line_y, c_b, c_l)) #vertical bar
+    pygame.draw.rect(combined_object, white, (line_y, line_x, c_l, c_b)) # Horizontal bar
+
+
+    ## Rotate surface
+    heading_degree = math.degrees(turningRadius) - 90
+    rotated_surface = pygame.transform.rotate(combined_object, heading_degree)
+
+    screen_x , screen_y = WorldToScreen(x_position, y_position,ppm, screen_width, screen_height)
+    new_rect = rotated_surface.get_rect(center=(screen_x, screen_y))
+    ##draw the combine model
+    
+    screen.blit(rotated_surface, new_rect)
 
 RUNNING = True
+ROBOT_X_POSITION = 0
+ROBOT_Y_POSITION = 0
+ROBOT_TURNING_DEGREE = 0
+
+
+LINEAR_VELOCITY = 0
+ANGULAR_VELOCITY = 0
+
+
+MOVE_SPEED = 2
+TURNING_SPEED = 3
+
 
 while RUNNING:
     screen.fill((240, 240, 240))
-
-    # Calculate delta time dynamically (seconds passed since last frame)
-    # clock.tick(60) limits frame rate, and returns the milliseconds passed.
-    dt = clock.tick(60) / 1000.0 
-
+    dt = clock.tick(60) / 1000.0
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             RUNNING = False
             
-        # Mapping arrow keys to actual physical steering (Tank Drive style)
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_UP:
-                linear_velocity = MAX_LINEAR_SPEED
+                LINEAR_VELOCITY = MOVE_SPEED
             if event.key == pygame.K_DOWN:
-                linear_velocity = -MAX_LINEAR_SPEED
+                LINEAR_VELOCITY = -MOVE_SPEED
             if event.key == pygame.K_LEFT:
-                angular_velocity = MAX_TURNING_SPEED
+                ANGULAR_VELOCITY = TURNING_SPEED
             if event.key == pygame.K_RIGHT:
-                angular_velocity = -MAX_TURNING_SPEED
+                ANGULAR_VELOCITY = -TURNING_SPEED
     
         if event.type == pygame.KEYUP:
-            if event.key in (pygame.K_UP, pygame.K_DOWN):
-                linear_velocity = 0.0
             if event.key in (pygame.K_LEFT, pygame.K_RIGHT):
-                angular_velocity = 0.0
+                ANGULAR_VELOCITY = 0
+            if event.key in (pygame.K_UP, pygame.K_DOWN):
+                LINEAR_VELOCITY = 0
     
-    # --- 3. KINEMATICS ENGINE UPDATE ---
-    # Update position based on current heading angle
-    world_x += linear_velocity * math.cos(theta) * dt
-    world_y += linear_velocity * math.sin(theta) * dt
-    
-    # Update rotation angle based on turning velocity
-    theta += angular_velocity * dt
-
-    # Keep theta wrapped cleanly between -PI and +PI
-    theta = math.atan2(math.sin(theta), math.cos(theta))
   
-    # --- 4. RENDER ELEMENT ---
-    drawRobot(world_x, world_y, theta)
+    ROBOT_X_POSITION += LINEAR_VELOCITY * math.cos(ROBOT_TURNING_DEGREE) * dt
+    ROBOT_Y_POSITION += LINEAR_VELOCITY * math.sin(ROBOT_TURNING_DEGREE) * dt
+    ROBOT_TURNING_DEGREE += ANGULAR_VELOCITY * dt
+
+
+    ROBOT_TURNING_DEGREE = math.atan2(math.sin(ROBOT_TURNING_DEGREE), math.cos(ROBOT_TURNING_DEGREE))
+  
+    DrawRobot(ROBOT_X_POSITION, ROBOT_Y_POSITION,ROBOT_TURNING_DEGREE,ppm, screen_width, screen_height, robot_config)
     
     pygame.display.update()
+    
+    clock.tick(60)
 
 pygame.quit()
