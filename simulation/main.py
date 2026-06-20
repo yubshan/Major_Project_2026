@@ -1,9 +1,9 @@
 import os
 import pygame
-import math
-from config import screen_width, screen_height, robot_config, ppm, robot_max_speed, robot_max_turning_speed
-from core.drawRobot import DrawRobot
+from config import SCREEN_WIDTH, SCREEN_HEIGH,PPM,ROBOT_CONFIG, ROBOT_MAX_SPEED, ROBOT_MAX_TURNING_SPEED
+from core.drawRobot import Robot
 from core.kinematics import ForwardKinematics
+from core.drawMaze import drawMaze1
 current_dir = os.path.dirname(__file__)
 logo_image_path = os.path.join(current_dir, "assets", "logo.bmp")
 
@@ -11,7 +11,7 @@ pygame.init()
 
 
 
-screen = pygame.display.set_mode((screen_width, screen_height))
+screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGH))
 pygame.display.set_caption("Autonomous-Rescue-Robot-Simulator")
 
 # Create a clock object to control the frame rate safely
@@ -25,15 +25,10 @@ except pygame.error as e:
     print(f"Warning: The Error we got: {e}")
     print("using default window icon.")
 
+robot =  Robot()
 
 RUNNING = True
-ROBOT_X_POSITION = 0
-ROBOT_Y_POSITION = 0
-ROBOT_TURNING_DEGREE = 0
 
-
-LINEAR_VELOCITY = 0
-ANGULAR_VELOCITY = 0
 
 
 while RUNNING:
@@ -43,29 +38,9 @@ while RUNNING:
         if event.type == pygame.QUIT:
             RUNNING = False
             
-        if event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_UP:
-                LINEAR_VELOCITY = robot_max_speed
-            if event.key == pygame.K_DOWN:
-                LINEAR_VELOCITY = -robot_max_speed
-            if event.key == pygame.K_LEFT:
-                ANGULAR_VELOCITY = robot_max_turning_speed
-            if event.key == pygame.K_RIGHT:
-                ANGULAR_VELOCITY = -robot_max_turning_speed
-    
-        if event.type == pygame.KEYUP:
-            if event.key in (pygame.K_LEFT, pygame.K_RIGHT):
-                ANGULAR_VELOCITY = 0
-            if event.key in (pygame.K_UP, pygame.K_DOWN):
-                LINEAR_VELOCITY = 0
-    
-    x_update_by, y_update_by, turned_by = ForwardKinematics(LINEAR_VELOCITY, ANGULAR_VELOCITY, ROBOT_TURNING_DEGREE, dt)
-    ROBOT_X_POSITION += x_update_by
-    ROBOT_Y_POSITION += y_update_by
-    ROBOT_TURNING_DEGREE += turned_by
-  
-    DrawRobot(ROBOT_X_POSITION, ROBOT_Y_POSITION,ROBOT_TURNING_DEGREE, ppm, screen_width, screen_height, robot_config)
-    
+    robot.update(dt)
+    robot.render( )
+    drawMaze1()
     pygame.display.update()
     
     clock.tick(60)

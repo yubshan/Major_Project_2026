@@ -1,7 +1,8 @@
-screen_width = 800
-screen_height = 800
-ppm = 60
-robot_config = {
+import math
+SCREEN_WIDTH = 800
+SCREEN_HEIGH = 800
+PPM = 60
+ROBOT_CONFIG = {
     "robot_dimension" : {
         "width": 1,
         "height": 1
@@ -15,6 +16,9 @@ robot_config = {
         "height": 0.55
     }
 }
-robot_max_speed = 4
-robot_max_turning_speed = 3
+ROBOT_MAX_SPEED = 4
+ROBOT_MAX_TURNING_SPEED = 3
 
+FOV = 60 * (math.pi / 180)
+RES = 4
+NUM_RAYS = SCREEN_WIDTH / RES
