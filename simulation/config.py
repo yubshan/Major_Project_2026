@@ -2,6 +2,12 @@ import math
 SCREEN_WIDTH = 800
 SCREEN_HEIGH = 800
 PPM = 60
+
+GRID_CELL_SIZE = 0.2
+GRID_WIDTH = 40 
+GRID_HEIGHT = 40
+
+
 ROBOT_CONFIG = {
     "robot_dimension" : {
         "width": 1,
@@ -19,6 +25,8 @@ ROBOT_CONFIG = {
 ROBOT_MAX_SPEED = 4
 ROBOT_MAX_TURNING_SPEED = 3
 
-FOV = 60 * (math.pi / 180)
+
+RAY_RANGE = 4 # meter
+FOV = 15 * (math.pi / 180)
 RES = 4
-NUM_RAYS = SCREEN_WIDTH / RES
+NUM_RAYS = SCREEN_WIDTH // RES

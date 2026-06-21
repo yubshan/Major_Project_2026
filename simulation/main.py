@@ -2,8 +2,9 @@ import os
 import pygame
 from config import SCREEN_WIDTH, SCREEN_HEIGH,PPM,ROBOT_CONFIG, ROBOT_MAX_SPEED, ROBOT_MAX_TURNING_SPEED
 from core.drawRobot import Robot
-from core.kinematics import ForwardKinematics
-from core.drawMaze import drawMaze1
+from core.rayCaster import RayCaster
+from core.map import Map
+
 current_dir = os.path.dirname(__file__)
 logo_image_path = os.path.join(current_dir, "assets", "logo.bmp")
 
@@ -14,7 +15,7 @@ pygame.init()
 screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGH))
 pygame.display.set_caption("Autonomous-Rescue-Robot-Simulator")
 
-# Create a clock object to control the frame rate safely
+
 clock = pygame.time.Clock()
 
 try:
@@ -25,7 +26,9 @@ except pygame.error as e:
     print(f"Warning: The Error we got: {e}")
     print("using default window icon.")
 
+map = Map()
 robot =  Robot()
+raycaster = RayCaster(robot)
 
 RUNNING = True
 
@@ -39,10 +42,14 @@ while RUNNING:
             RUNNING = False
             
     robot.update(dt)
-    robot.render( )
-    drawMaze1()
+    raycaster.castAllRays(map)
+
+
+    map.render(screen)
+    robot.render()
+
+    raycaster.render(screen)
     pygame.display.update()
-    
     clock.tick(60)
 
 pygame.quit()
