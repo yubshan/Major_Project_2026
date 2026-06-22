@@ -15,7 +15,7 @@ class Robot:
         self.moveSpeed = ROBOT_MAX_SPEED
         self.turnSpeed = ROBOT_MAX_TURNING_SPEED
         self.rayRange = RAY_RANGE
-        self.autonomousDrive = True
+        self.autonomousDrive = False
 
         self.sensors = [
             UltrasonicSensor(self, 

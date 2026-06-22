@@ -4,9 +4,10 @@ SCREEN_WIDTH = 800
 SCREEN_HEIGH = 800
 PPM = 60
 
-GRID_CELL_SIZE = 0.2
-GRID_WIDTH = 40
-GRID_HEIGHT = 40
+# config.py
+GRID_CELL_SIZE = 0.1   
+GRID_WIDTH     = 80    
+GRID_HEIGHT    = 80    
 
 ROBOT_CONFIG = {
     "robot_dimension": {
@@ -23,8 +24,8 @@ ROBOT_CONFIG = {
     }
 }
 
-ROBOT_MAX_SPEED = 4
-ROBOT_MAX_TURNING_SPEED = 3
+ROBOT_MAX_SPEED = 1.5
+ROBOT_MAX_TURNING_SPEED = 1.2
 
 RAY_RANGE = 4  # meters
 FOV = 15 * (math.pi / 180)
