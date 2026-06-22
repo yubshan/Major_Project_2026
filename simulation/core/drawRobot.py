@@ -1,8 +1,9 @@
 import pygame
 import math
 from utils import MeterToPixel, WorldToScreen
-from config import ROBOT_MAX_SPEED, ROBOT_MAX_TURNING_SPEED, PPM, SCREEN_HEIGH, SCREEN_WIDTH, ROBOT_CONFIG, RAY_RANGE
+from config import *
 from core.kinematics import ForwardKinematics
+from core.ultrasonic import UltrasonicSensor
 
 class Robot:
     def __init__(self):
@@ -14,8 +15,86 @@ class Robot:
         self.moveSpeed = ROBOT_MAX_SPEED
         self.turnSpeed = ROBOT_MAX_TURNING_SPEED
         self.rayRange = RAY_RANGE
+        self.autonomousDrive = True
 
-    def update(self, dt):
+        self.sensors = [
+            UltrasonicSensor(self, 
+                             offset_angle=cfg["offset_angle"],
+                             firing_round=cfg["firing_round"])
+            for cfg in SENSOR_CONFIGS
+        ]
+        self.current_round = 0
+        self.frame_counter = 0
+
+        self.victim_memory = []
+
+    def advance_firing(self):
+        self.frame_counter += 1
+        if self.frame_counter >= FRAMES_PER_ROUND:
+            self.frame_counter = 0
+            self.current_round = (self.current_round + 1) % NUM_FIRING_ROUNDS
+
+    
+    def update_sensors(self, grid, current_round):
+        readings = {}
+        for idx, sensor in enumerate(self.sensors):
+            readings[idx] = sensor.sense(grid, current_round)
+        return readings
+
+    def render_sensors(self, screen):
+        for sensor in self.sensors:
+            sensor.render(screen)
+
+    def autonomous_drive(self):
+        # Sensors data (in meter measurement)
+        front_dist = self.sensors[0].measured_distance
+        f_left_dist = self.sensors[1].measured_distance
+        f_right_dist = self.sensors[2].measured_distance
+        left_dist = self.sensors[3].measured_distance
+        right_dist = self.sensors[4].measured_distance
+        rear_dist = self.sensors[5].measured_distance
+
+
+        self.LinearVelocity  = self.moveSpeed
+        self.AngularVelocity= 0.0
+
+        # if something front or some is caught diagonally 
+        if front_dist < CRITICAL_DISTANCE or f_left_dist < (CRITICAL_DISTANCE * 0.8) or f_right_dist < (CRITICAL_DISTANCE * 0.8):
+            self.LinearVelocity = 0.0 # stop immediatly(brake)
+
+            # Decide turn direction: go toward the side with more space.
+            # Also factor in rear — if rear is blocked too, prefer turning
+            # to the side with most combined clearance.
+            left_score  = f_left_dist + left_dist
+            right_score = f_right_dist + right_dist
+ 
+            if left_score >= right_score:
+                self.AngularVelocity = self.turnSpeed
+            else:
+                self.AngularVelocity = -self.turnSpeed
+
+        # front is clear but the side wall is getting closer
+        else:
+            min_forward_distance = min(front_dist, f_left_dist, f_right_dist)
+
+            if min_forward_distance < WARNING_ZONE:
+                self.LinearVelocity = self.moveSpeed * (min_forward_distance/ WARNING_ZONE)
+
+            if left_dist < 0.4 or f_left_dist < 0.8:
+                self.AngularVelocity = -self.turnSpeed * 0.5
+
+            elif right_dist < 0.4 or f_right_dist < 0.8:
+                self.AngularVelocity = self.turnSpeed * 0.5
+            
+
+            # ── REAR GUARD: if reversing and rear is close, stop ─────────
+            # (Only relevant if LinearVelocity were negative; kept for
+            #  completeness so future BT reverse actions are safe.)
+            if self.LinearVelocity < 0 and rear_dist < CRITICAL_DISTANCE:
+                self.LinearVelocity = 0.0
+
+
+    def manual_input_drive(self):
         keys = pygame.key.get_pressed()
         
 
@@ -31,6 +110,13 @@ class Robot:
             self.AngularVelocity = self.turnSpeed
         elif keys[pygame.K_RIGHT]:
             self.AngularVelocity = -self.turnSpeed
+    
+    def update(self, dt, env_map):
+        self.update_sensors(env_map, self.current_round)
+        if self.autonomousDrive == True:
+            self.autonomous_drive()
+        else: 
+            self.manual_input_drive()
             
         x_update_by, y_update_by, turned_by = ForwardKinematics(
             self.LinearVelocity, self.AngularVelocity, self.turnDegree, dt
@@ -39,6 +125,8 @@ class Robot:
         self.x += x_update_by
         self.y += y_update_by
         self.turnDegree += turned_by
+
+        self.advance_firing()
 
 
     def render (self):

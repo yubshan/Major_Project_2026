@@ -1,4 +1,5 @@
 import os
+import time
 import pygame
 from config import SCREEN_WIDTH, SCREEN_HEIGH,PPM,ROBOT_CONFIG, ROBOT_MAX_SPEED, ROBOT_MAX_TURNING_SPEED
 from core.drawRobot import Robot
@@ -35,20 +36,19 @@ RUNNING = True
 
 
 while RUNNING:
-    screen.fill((240, 240, 240))
     dt = clock.tick(60) / 1000.0
+    screen.fill((220,220,220))
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             RUNNING = False
             
-    robot.update(dt)
-    raycaster.castAllRays(map)
-
-
+    robot.update(dt, map)
+    
     map.render(screen)
+    robot.render_sensors(screen)
     robot.render()
 
-    raycaster.render(screen)
+
     pygame.display.update()
     clock.tick(60)
 
