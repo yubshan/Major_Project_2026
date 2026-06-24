@@ -15,7 +15,7 @@ class Ray:
         self.rayRange = RAY_RANGE 
 
     def cast(self, grid):
-        step_size = 0.05 
+        step_size = 0.01 
         current_dist = 0.0
         
         while current_dist < RAY_RANGE:

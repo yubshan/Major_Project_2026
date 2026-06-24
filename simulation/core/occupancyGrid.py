@@ -1,4 +1,3 @@
-
 import math
 import pygame 
 from config import *
@@ -14,7 +13,7 @@ OCCUPIED_WEIGHT= 0.40
 FREE_THRESHOLD = 0.28
 OCCUPIED_THRESHOLD = 0.75
 
-OVERLAY_ALPHA = 200  # tranparent- 0 opaque - 255
+OVERLAY_ALPHA = 200  # transparent- 0 opaque - 255
 
 
 class OccupancyGrid:
@@ -27,55 +26,73 @@ class OccupancyGrid:
         self.dirty = True
     
 
-    def update_from_robot(self, robot,env_map):
+    def update_from_robot(self, robot, env_map):
         for sensor in robot.sensors:
-            center_angle = robot.turnDegree + sensor.offset_angle
-            hit_distance = sensor.measured_distance
+            # 1. Time-of-Flight Sensor (Fires every frame)
+            if hasattr(sensor, "cols") and hasattr(sensor, "depth_grid"):
+                center_angle = robot.turnDegree + sensor.offset_angle
+                start_angle = center_angle - sensor.fov / 2.0
 
-            ray_angle = center_angle - FOV/2
-            angle_step = FOV / (ULTRASONIC_NUM_RAYS - 1)  if ULTRASONIC_NUM_RAYS > 1 else 0
+                for col in range(sensor.cols):
+                    ray_angle = start_angle + (0.5 + col) * sensor.zone_angle
+                    hit_distance = sensor.depth_grid[0][col]
 
-            for i in range(ULTRASONIC_NUM_RAYS):
-                is_center_ray = (i == ULTRASONIC_NUM_RAYS // 2)
-                self.trace_ray(robot.x, robot.y, ray_angle, hit_distance, mark_occupied=is_center_ray)
-                ray_angle += angle_step
+                    is_hit = hit_distance < sensor.max_range
 
-        self.dirty = True  
+                    self.trace_ray(robot.x, robot.y, ray_angle, hit_distance, mark_occupied=is_hit,
+                                    f_weight=0.04, o_weight=0.50, max_r=sensor.max_range)
+            # 2. Ultrasonic Sensors (Sequenced Round Robin Firing)
+            else:
+                if robot.current_round != sensor.firing_round:
+                    continue
+
+                center_angle = robot.turnDegree + sensor.offset_angle
+                hit_distance = sensor.measured_distance
+
+                is_valid_hit = hit_distance < (RAY_RANGE - 0.05)
+                ray_angle = center_angle - FOV/2
+                angle_step = FOV / (ULTRASONIC_NUM_RAYS - 1) if ULTRASONIC_NUM_RAYS > 1 else 0
+
+                for i in range(ULTRASONIC_NUM_RAYS):
+                    is_center_ray = (i == ULTRASONIC_NUM_RAYS // 2)
+
+                    self.trace_ray(robot.x, robot.y, ray_angle, hit_distance, mark_occupied=(is_center_ray and is_valid_hit),
+                                   f_weight=0.01, o_weight=0.25, max_r=RAY_RANGE)
+                    ray_angle += angle_step
+        self.dirty = True
 
 
-
-
-    def trace_ray(self, origin_x, origin_y, angle, hit_distance, mark_occupied=True):
-        origin_col , origin_row = self.world_to_cell(origin_x, origin_y)
+    def trace_ray(self, origin_x, origin_y, angle, hit_distance, mark_occupied=True, f_weight=0.06, o_weight=0.40, max_r=RAY_RANGE):
+        origin_col, origin_row = self.world_to_cell(origin_x, origin_y)
         hit_x = origin_x + hit_distance * math.cos(angle)
         hit_y = origin_y + hit_distance * math.sin(angle)
-        hit_col , hit_row = self.world_to_cell(hit_x, hit_y)
+        hit_col, hit_row = self.world_to_cell(hit_x, hit_y)
 
         ray_cells = self.bersenham_calculation(origin_col, origin_row, hit_col, hit_row)
 
         for i, (col, row) in enumerate(ray_cells):
             if 0 <= col < GRID_WIDTH and 0 <= row < GRID_HEIGHT:
                 dist_to_hit = len(ray_cells) - i
-                if dist_to_hit > 2:
-                    self.update_cell(row, col, FREE, FREE_WEIGHT)
+                # Clears completely up to the boundary cell edge
+                if dist_to_hit > 1:
+                    self.update_cell(row, col, FREE, f_weight)
 
-        ray_hit_obstacle = hit_distance < (RAY_RANGE * 0.85)
+        ray_hit_obstacle = hit_distance < (max_r - 0.05)
         if mark_occupied and ray_hit_obstacle:
             if 0 <= hit_col < GRID_WIDTH and 0 <= hit_row < GRID_HEIGHT:
-                self.update_cell(hit_row, hit_col, OCCUPIED, OCCUPIED_WEIGHT)
+                self.update_cell(hit_row, hit_col, OCCUPIED, o_weight)
 
 
-
-    def update_cell (self,row, col, new_value, weight):
+    def update_cell(self, row, col, new_value, weight):
         current = self.cells[row][col]
-        updated = current * (1.0-weight) + new_value * weight
+        updated = current * (1.0 - weight) + new_value * weight
         self.cells[row][col] = max(0.05, min(0.95, updated))
 
 
     def bersenham_calculation(self, c0, r0, c1, r1):
-        cells  = []
-        dc = abs (c1-c0)
-        dr = abs (r1-r0)
+        cells = []
+        dc = abs(c1 - c0)
+        dr = abs(r1 - r0)
         sc = 1 if c0 < c1 else -1
         sr = 1 if r0 < r1 else -1
         err = dc - dr
@@ -85,26 +102,24 @@ class OccupancyGrid:
         while True:
             if c == c1 and r == r1:
                 break
-            cells.append((c,r))
+            cells.append((c, r))
             e2 = 2 * err
             if e2 > -dr:
                 err -= dr
-                c   += sc
+                c += sc
             if e2 < dc:
                 err += dc
-                r   += sr
+                r += sr
  
         return cells
 
- 
 
-
-    def world_to_cell(self,world_x, world_y):
+    def world_to_cell(self, world_x, world_y):
         half_w = (GRID_WIDTH * GRID_CELL_SIZE) // 2
         half_h = (GRID_HEIGHT * GRID_CELL_SIZE) // 2
 
         col = int((world_x + half_w) / GRID_CELL_SIZE)
-        row = int((half_h  - world_y) / GRID_CELL_SIZE)
+        row = int((half_h - world_y) / GRID_CELL_SIZE)
         return col, row
 
     def render(self, screen):
@@ -116,7 +131,7 @@ class OccupancyGrid:
     def redraw_surface(self):
         self.surface.fill((0, 0, 0, 0))
 
-        cell_px = int (GRID_CELL_SIZE * PPM)
+        cell_px = int(GRID_CELL_SIZE * PPM)
 
         for row in range(GRID_HEIGHT):
             for col in range(GRID_WIDTH):
@@ -130,11 +145,11 @@ class OccupancyGrid:
                     color = (160, 160, 160, OVERLAY_ALPHA)  
 
                 # Convert grid cell centre to world, then to screen
-                half_w = (GRID_WIDTH  * GRID_CELL_SIZE) / 2
+                half_w = (GRID_WIDTH * GRID_CELL_SIZE) / 2
                 half_h = (GRID_HEIGHT * GRID_CELL_SIZE) / 2
  
                 world_x = (col * GRID_CELL_SIZE) - half_w + GRID_CELL_SIZE / 2
-                world_y =  half_h - (row * GRID_CELL_SIZE) - GRID_CELL_SIZE / 2
+                world_y = half_h - (row * GRID_CELL_SIZE) - GRID_CELL_SIZE / 2
  
                 scr_x, scr_y = WorldToScreen(world_x, world_y, PPM, SCREEN_WIDTH, SCREEN_HEIGH)
  
@@ -144,6 +159,7 @@ class OccupancyGrid:
                      scr_y - cell_px // 2,
                      cell_px, cell_px)
                 )
+
     def _is_supported_occupied(self, row, col):
         neighbour_count = 0
         for dr in [-1, 0, 1]:
@@ -155,71 +171,16 @@ class OccupancyGrid:
                     if self.cells[nr][nc] > OCCUPIED_THRESHOLD:
                         neighbour_count += 1
         return neighbour_count >= 2
-    def get_wall_segments(self):
-        """
-        Scan the grid and return a list of (start, end) pixel coordinate pairs
-        representing detected wall segments for clean line rendering.
-        """
-        segments = []
-        visited  = set()
 
-        for row in range(GRID_HEIGHT):
-            for col in range(GRID_WIDTH):
-                if (row, col) in visited:
-                    continue
-                if self.cells[row][col] <= OCCUPIED_THRESHOLD:
-                    continue
-                if not self._is_supported_occupied(row, col):
-                    continue
 
-                # Try to extend horizontally first
-                h_end = col
-                while (h_end + 1 < GRID_WIDTH and
-                    self.cells[row][h_end + 1] > OCCUPIED_THRESHOLD and
-                    self._is_supported_occupied(row, h_end + 1)):
-                    h_end += 1
-
-                # Try to extend vertically
-                v_end = row
-                while (v_end + 1 < GRID_HEIGHT and
-                    self.cells[v_end + 1][col] > OCCUPIED_THRESHOLD and
-                    self._is_supported_occupied(v_end + 1, col)):
-                    v_end += 1
-
-                h_length = h_end - col
-                v_length = v_end - row
-
-                if h_length >= v_length and h_length >= 2:
-                    # Horizontal segment
-                    for c in range(col, h_end + 1):
-                        visited.add((row, c))
-                    segments.append(('h', row, col, h_end))
-
-                elif v_length >= 2:
-                    # Vertical segment
-                    for r in range(row, v_end + 1):
-                        visited.add((r, col))
-                    segments.append(('v', col, row, v_end))
-
-        return segments
-    
     def get_belief(self, world_x: float, world_y: float) -> float:
-        """
-        Return the occupancy probability [0,1] for a world coordinate.
-        Returns UNKNOWN (0.5) if out of bounds.
-        Used by the Behavior Tree to query the map.
-        """
-        col, row = self._world_to_cell(world_x, world_y)
+        col, row = self.world_to_cell(world_x, world_y)
         if 0 <= col < GRID_WIDTH and 0 <= row < GRID_HEIGHT:
             return self.cells[row][col]
         return UNKNOWN
 
     def is_known_free(self, world_x: float, world_y: float) -> bool:
-        """Convenience method for BT conditions."""
         return self.get_belief(world_x, world_y) < FREE_THRESHOLD
 
     def is_known_occupied(self, world_x: float, world_y: float) -> bool:
-        """Convenience method for BT conditions."""
         return self.get_belief(world_x, world_y) > OCCUPIED_THRESHOLD
-
-

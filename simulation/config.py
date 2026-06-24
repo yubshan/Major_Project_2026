@@ -2,7 +2,7 @@ import math
 
 SCREEN_WIDTH = 800
 SCREEN_HEIGH = 800
-PPM = 60
+PPM = 100
 
 # config.py
 GRID_CELL_SIZE = 0.1   
@@ -24,13 +24,11 @@ ROBOT_CONFIG = {
     }
 }
 
-ROBOT_MAX_SPEED = 1.5
+ROBOT_MAX_SPEED = 0.7
 ROBOT_MAX_TURNING_SPEED = 1.2
 
 RAY_RANGE = 4  # meters
 FOV = 15 * (math.pi / 180)
-RES = 4
-NUM_RAYS = SCREEN_WIDTH // RES
 ULTRASONIC_NUM_RAYS = 9
 CRITICAL_DISTANCE = 0.7
 WARNING_ZONE = 1.5
@@ -41,9 +39,17 @@ SENSOR_CONFIGS = [
     {"name": "FRONT_RIGHT",  "offset_angle": -45, "firing_round": 1},
     {"name": "LEFT",         "offset_angle":  90, "firing_round": 0},
     {"name": "RIGHT",        "offset_angle": -90, "firing_round": 0},
-    {"name": "REAR",         "offset_angle": 180, "firing_round": 3},
 ]
 
 NUM_FIRING_ROUNDS = 4
 
-FRAMES_PER_ROUND = 4
+FRAMES_PER_ROUND = 8
+
+TOF_ROWS = 8
+TOF_COLS = 8
+TOF_FOV = 61.0 * math.pi /180    #Raidian
+TOF_MAX_RANGE = 4.0              #Meter
+TOF_RENDER_OVERLAY = True
+ 
+
+ 

@@ -4,7 +4,7 @@ from utils import MeterToPixel, WorldToScreen
 from config import *
 from core.kinematics import ForwardKinematics
 from core.ultrasonic import UltrasonicSensor
-
+from core.tof_sensor import ToFSensor
 class Robot:
     def __init__(self):
         self.x = 0
@@ -23,10 +23,12 @@ class Robot:
                              firing_round=cfg["firing_round"])
             for cfg in SENSOR_CONFIGS
         ]
+        self.sensors.append(ToFSensor(self, offset_angle=0))
         self.current_round = 0
         self.frame_counter = 0
 
-        self.victim_memory = []
+        self.goal_x = 1.5
+        self.goal_y = 1.5
 
     def advance_firing(self):
         self.frame_counter += 1
@@ -46,53 +48,45 @@ class Robot:
             sensor.render(screen)
 
     def autonomous_drive(self):
-        # Sensors data (in meter measurement)
-        front_dist = self.sensors[0].measured_distance
-        f_left_dist = self.sensors[1].measured_distance
-        f_right_dist = self.sensors[2].measured_distance
-        left_dist = self.sensors[3].measured_distance
-        right_dist = self.sensors[4].measured_distance
-        rear_dist = self.sensors[5].measured_distance
+        # 1. Gather sensor data
+        f_dist = self.sensors[0].measured_distance
+        fl_dist = self.sensors[1].measured_distance
+        fr_dist = self.sensors[2].measured_distance
+        l_dist = self.sensors[3].measured_distance
+        r_dist = self.sensors[4].measured_distance
 
-
-        self.LinearVelocity  = self.moveSpeed
-        self.AngularVelocity= 0.0
-
-        # if something front or some is caught diagonally 
-        if front_dist < CRITICAL_DISTANCE or f_left_dist < (CRITICAL_DISTANCE * 0.8) or f_right_dist < (CRITICAL_DISTANCE * 0.8):
-            self.LinearVelocity = 0.0 # stop immediatly(brake)
-
-            # Decide turn direction: go toward the side with more space.
-            # Also factor in rear — if rear is blocked too, prefer turning
-            # to the side with most combined clearance.
-            left_score  = f_left_dist + left_dist
-            right_score = f_right_dist + right_dist
- 
-            if left_score >= right_score:
-                self.AngularVelocity = self.turnSpeed
-            else:
-                self.AngularVelocity = -self.turnSpeed
-
-        # front is clear but the side wall is getting closer
-        else:
-            min_forward_distance = min(front_dist, f_left_dist, f_right_dist)
-
-            if min_forward_distance < WARNING_ZONE:
-                self.LinearVelocity = self.moveSpeed * (min_forward_distance/ WARNING_ZONE)
-
-            if left_dist < 0.4 or f_left_dist < 0.8:
-                self.AngularVelocity = -self.turnSpeed * 0.5
-
-            elif right_dist < 0.4 or f_right_dist < 0.8:
-                self.AngularVelocity = self.turnSpeed * 0.5
+        # Define thresholds
+        STOP_DIST = 0.35  # Must stop
+        WARN_DIST = 0.70  # Slow down and turn
+        
+        # 2. Logic: State Machine
+        
+        # STATE: EMERGENCY STOP/AVOIDANCE
+        if f_dist < STOP_DIST or fl_dist < STOP_DIST or fr_dist < STOP_DIST:
+            self.LinearVelocity = 0.0
+            # Spin in the direction with more open space
+            self.AngularVelocity = self.turnSpeed if (l_dist > r_dist) else -self.turnSpeed
             
-
-            # ── REAR GUARD: if reversing and rear is close, stop ─────────
-            # (Only relevant if LinearVelocity were negative; kept for
-            #  completeness so future BT reverse actions are safe.)
-            if self.LinearVelocity < 0 and rear_dist < CRITICAL_DISTANCE:
-                self.LinearVelocity = 0.0
-
+        # STATE: WARNING / WALL FOLLOWING
+        elif f_dist < WARN_DIST or fl_dist < WARN_DIST or fr_dist < WARN_DIST:
+            self.LinearVelocity = self.moveSpeed * 0.5 # Slow down
+            # Gentle turn away from the closest wall
+            if fl_dist < fr_dist:
+                self.AngularVelocity = -self.turnSpeed * 0.6
+            else:
+                self.AngularVelocity = self.turnSpeed * 0.6
+        
+        # STATE: EXPLORATION (CRUISE)
+        else:
+            self.LinearVelocity = self.moveSpeed
+            # Gentle tendency to stay away from walls
+            if l_dist < 0.5:
+                self.AngularVelocity = -self.turnSpeed * 0.3
+            elif r_dist < 0.5:
+                self.AngularVelocity = self.turnSpeed * 0.3
+            else:
+                self.AngularVelocity = 0.0
+                
 
     def manual_input_drive(self):
         keys = pygame.key.get_pressed()

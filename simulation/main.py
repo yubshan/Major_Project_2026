@@ -2,7 +2,6 @@ import os
 import pygame
 from config import SCREEN_WIDTH, SCREEN_HEIGH,PPM,ROBOT_CONFIG, ROBOT_MAX_SPEED, ROBOT_MAX_TURNING_SPEED
 from core.drawRobot import Robot
-from core.rayCaster import RayCaster
 from core.map import Map
 from core.occupancyGrid import OccupancyGrid
 
