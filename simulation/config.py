@@ -30,8 +30,8 @@ ROBOT_MAX_TURNING_SPEED = 1.2
 RAY_RANGE = 4  # meters
 FOV = 15 * (math.pi / 180)
 ULTRASONIC_NUM_RAYS = 9
-CRITICAL_DISTANCE = 0.7
-WARNING_ZONE = 1.5
+CRITICAL_DISTANCE = 0.3
+WARNING_ZONE = 1.2
 
 SENSOR_CONFIGS = [
     {"name": "FRONT",        "offset_angle":   0, "firing_round": 2},

@@ -7,9 +7,9 @@ from core.ultrasonic import UltrasonicSensor
 from core.tof_sensor import ToFSensor
 class Robot:
     def __init__(self):
-        self.x = 0
-        self.y = 0
-        self.turnDegree = 0
+        self.x = 3.0
+        self.y = -3.5
+        self.turnDegree = 90 * math.pi / 180
         self.LinearVelocity = 0
         self.AngulatVelocity = 0
         self.moveSpeed = ROBOT_MAX_SPEED
@@ -27,8 +27,7 @@ class Robot:
         self.current_round = 0
         self.frame_counter = 0
 
-        self.goal_x = 1.5
-        self.goal_y = 1.5
+        self.victim_memory = []
 
     def advance_firing(self):
         self.frame_counter += 1

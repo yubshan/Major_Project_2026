@@ -125,16 +125,11 @@ class OccupancyGrid():
                 self.update_map_from_ultrasonic(env_map, robot, sensor)
 
     def render(self, screen):
-        """
-        Renders the occupancy map with high-visibility solid colors 
-        for hazards so they don't get swallowed by fine grid resolutions.
-        """
         half_w = (GRID_WIDTH * GRID_CELL_SIZE) / 2
         half_h = (GRID_HEIGHT * GRID_CELL_SIZE) / 2
 
         for row in range(GRID_HEIGHT):
             for col in range(GRID_WIDTH):
-                # 1. Project world coordinates to screen rect
                 cell_wx = (col * GRID_CELL_SIZE) - half_w
                 cell_wy = half_h - (row * GRID_CELL_SIZE)
                 
@@ -145,30 +140,19 @@ class OccupancyGrid():
                 height = sy2 - sy1
                 cell_rect = pygame.Rect(sx1, sy1, width, height)
 
-                # 2. Check hazard states first (String & Integer Safe)
+                raw_log_odds = self.cells[row][col]
+                prob = 1.0 / (1.0 + math.exp(-raw_log_odds))
+
+                gray_intensity = int((1.0 - prob) * 255)
+                base_color = (gray_intensity, gray_intensity, gray_intensity)
+                pygame.draw.rect(screen, base_color, cell_rect)
+
                 hazard = self.hazard_cell[row][col]
-                hazard_str = str(hazard).lower()
+                if hazard == FIRE:
+                    pygame.draw.rect(screen, (255, 50, 50), cell_rect.inflate(-4, -4), 2)
+                elif hazard == VICTIM:
+                    pygame.draw.rect(screen, (50, 255, 50), cell_rect.inflate(-6, -6))
+                elif hazard == COLLAPSE_ZONE:
+                    pygame.draw.rect(screen, (255, 150, 0), cell_rect.inflate(-4, -4), 1)
 
-                is_fire = (hazard == FIRE or hazard_str == 'fire' or hazard == 2)
-                is_victim = (hazard == VICTIM or hazard_str == 'victim' or hazard == 3)
-                is_collapse = (hazard == COLLAPSE_ZONE or hazard_str == 'collapse_zone' or hazard == 4)
-
-                # 3. Render Logic: Hazards completely paint over the cell for high visibility
-                if is_fire:
-                    pygame.draw.rect(screen, (255, 60, 60), cell_rect)  # Solid Bright Red
-                elif is_victim:
-                    pygame.draw.rect(screen, (60, 255, 60), cell_rect)  # Solid Bright Green
-                elif is_collapse:
-                    pygame.draw.rect(screen, (255, 150, 0), cell_rect) # Solid Orange
-                else:
-                    # No hazard? Draw standard grayscale occupancy tracking
-                    raw_log_odds = self.cells[row][col]
-                    clamped_log_odds = max(-20.0, min(20.0, raw_log_odds))
-                    prob = 1.0 / (1.0 + math.exp(-clamped_log_odds))
-
-                    gray_intensity = int((1.0 - prob) * 255)
-                    base_color = (gray_intensity, gray_intensity, gray_intensity)
-                    pygame.draw.rect(screen, base_color, cell_rect)
-
-                # 4. Draw subtle grid borders (use a faint color so it doesn't distract)
-                pygame.draw.rect(screen, (50, 50, 50), cell_rect, 1)
+                pygame.draw.rect(screen, (40, 40, 40), cell_rect, 1)
