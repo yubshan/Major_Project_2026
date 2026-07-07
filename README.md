@@ -1,7 +1,7 @@
 ## 📂 Repository Architecture
 
 ```text
-project-drisya/
+project-drishya/
 ├── .gitignore
 ├── README.md                 # Project landing page & documentation
 ├── requirements.txt          # Universal Python dependencies (PyTorch, py_trees, etc.)

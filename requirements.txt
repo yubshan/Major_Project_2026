@@ -1,4 +1,4 @@
 numpy==2.4.6
-pygame==2.6.1
+pygame-ce>=2.5.0
 pyserial==3.5
 websockets==16.0
