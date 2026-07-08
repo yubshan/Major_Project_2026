@@ -60,19 +60,29 @@ This module is responsible for:
 ```text
 simulation/
 ├── README.md
+├── requirements.txt
 ├── main.py
 ├── config.py
-├── utils.py
+├── constants.py
+├── .gitignore
+│
 ├── assets/
-└── core/
-    ├── map.py
-    ├── occupancyGrid.py
-    ├── ray.py
-    ├── ultrasonic.py
-    ├── tof_sensor.py
-    ├── drawRobot.py
-    ├── kinematics.py
-    └── bt/
+│   ├── maps/
+│   ├── robot/
+│   ├── tiles/
+│   ├── ui/
+│   ├── victims/
+│   └── walls/
+│
+├── simulation/
+│   └── __init__.py
+│
+├── visualization/
+│   ├── __init__.py
+│   ├── isometric.py
+│   └── renderer.py
+│
+└── tests/
 ```
 
 Additional files and directories will be added as implementation progresses.
