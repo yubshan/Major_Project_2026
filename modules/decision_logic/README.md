@@ -1,60 +1,85 @@
 # Decision Logic Module
 
-This module is the robot's high-level decision layer. Maintained by Suwarna, it reads the shared
-system state, decides what the robot should do next, and publishes navigation
-or mission commands back to the shared blackboard.
+**Owner:** Suwarna (Decision Logic / Teammate B)  
+**Project:** [Drishya](https://github.com/yubshan/Major_Project_2026) — autonomous rescue robot for search-and-exploration missions
 
-The planned decision stack combines:
+This module is the robot's high-level brain. It reads shared system state from `shared/blackboard.py`,
+decides what the robot should do next, and writes navigation or mission commands back for other
+modules to execute.
 
-- A behavior tree for predictable mission flow and safety checks.
-- Reinforcement learning experiments for exploration strategy tuning.
-- A lightweight runtime loop that ticks the decision logic at a fixed rate.
+The decision stack is planned to combine:
+
+- A **behavior tree** (`py_trees`) for predictable mission flow and safety checks.
+- **Reinforcement learning** experiments (Stable-Baselines3 PPO) for exploration strategy tuning.
+- A lightweight **runtime loop** (`brain.py`) that ticks the decision logic at 10 Hz.
+
+Implementation has not started yet. This README defines the module contract so navigation, WiFi
+detection, and simulation can integrate without tight coupling.
+
+## Role in the System
+
+```text
+  wifi_detection ──writes──►  shared/blackboard  ◄──reads──  navigation
+  simulation_viz ──reads────►       ▲                writes──► decision_logic
+                                    │
+                              decision_logic
+                              (this module)
+```
+
+Decision logic sits in the middle: it consumes pose, map, sensor, and detection data; it publishes
+intent (waypoints, stop/resume, mission state) for navigation and the dashboard to act on.
+
+Per `shared/blackboard.py`, this module should:
+
+- **Read** blackboard keys written by WiFi detection, navigation, and sensors.
+- **Write** outputs such as `state/motor_command` and behavior state for the simulator UI.
+
+Exact key names are not finalized yet. Agree on them with the team before wiring integration.
 
 ## Responsibilities
 
-- Choose the robot's current mission state: searching, navigating, confirming,
-  returning, or stopping.
-- Prioritize safety conditions before exploration or victim-search behavior.
-- Consume navigation, map, sensor, and WiFi detection outputs from shared
-  modules.
+- Choose the robot's current mission state: searching, navigating, confirming, returning, or stopping.
+- Run safety checks before exploration or victim-search behavior.
+- Consume navigation, map, sensor, and WiFi detection outputs from the blackboard.
 - Publish clear intent for the navigation module to execute.
-- Keep experimental RL training separate from runtime decision execution.
+- Keep RL training scripts separate from the runtime decision loop.
 
 ## Expected Structure
 
 ```text
 decision_logic/
 ├── README.md
-├── brain.py              # Runtime loop that ticks the decision system
-├── behavior_tree/        # Behavior tree nodes and tree assembly
-├── rl_env/               # Custom SARExploreEnv-style training environment
+├── brain.py              # Runtime loop that ticks the decision system @ 10 Hz
+├── behavior_tree/        # py_trees Behavior sub-classes and tree assembly
+├── rl_env/               # Custom SARExploreEnv-style Gymnasium environment
 └── train_ppo.py          # PPO training entry point for exploration policies
 ```
 
-Some of these files may not exist yet. Add them as the implementation grows.
+Files other than this README do not exist yet. Add them as implementation progresses.
 
 ## Blackboard Contract
 
-The decision layer should treat `shared/` as the integration boundary. Avoid
-direct imports from sibling modules unless the team agrees on a shared API.
+Treat `shared/` as the only integration boundary. Do not import sibling modules directly unless the
+team agrees on a shared API.
 
-Likely inputs:
+### Likely inputs
 
-- Robot pose and heading from navigation.
-- Occupancy grid or explored/frontier state from mapping.
-- Obstacle and proximity data from sensors or simulation.
-- Detection confidence and estimated target location from WiFi detection.
-- Mission flags such as start, pause, emergency stop, and completion.
+| Source | Data |
+|--------|------|
+| Navigation | Robot pose, heading, occupancy grid, frontier state |
+| Sensors / simulation | Obstacle and proximity readings (see `shared/sensor_format.py`) |
+| WiFi detection | Detection confidence, estimated target location |
+| Mission control | Start, pause, emergency stop, completion flags |
 
-Likely outputs:
+### Likely outputs
 
-- Current behavior state for dashboard display.
-- Target waypoint or exploration frontier for navigation.
-- Stop, pause, resume, or return-to-base commands.
-- Detection-confirmation requests when WiFi confidence is high.
+| Consumer | Data |
+|----------|------|
+| Navigation | Target waypoint, exploration frontier, stop/resume commands |
+| Simulation dashboard | Current behavior state for display |
+| WiFi detection | Detection-confirmation requests when confidence is high |
 
-When adding real keys, document the exact key names, value types, and owner
-module here.
+Document exact key names, value types, and owning module here once they are agreed.
 
 ## Runtime Flow
 
@@ -62,12 +87,10 @@ module here.
 2. Run safety and mission-precondition checks.
 3. Tick the behavior tree.
 4. Select the next action or navigation intent.
-5. Write the decision output back to the blackboard.
-6. Sleep until the next tick.
+5. Write decision outputs back to the blackboard.
+6. Sleep until the next tick (target: **10 Hz**).
 
-The target runtime tick rate from the architecture is 10 Hz.
-
-## Behavior Tree Notes
+## Behavior Tree Design
 
 Recommended top-level priority order:
 
@@ -77,34 +100,43 @@ Recommended top-level priority order:
 4. Explore unknown frontier regions.
 5. Idle or wait for mission start.
 
-Keep behavior nodes small and testable. Each node should read only the state it
-needs and write only the command it owns.
+Keep nodes small and testable. Each node should read only the state it needs and write only the
+command it owns.
+
+## Developing Before Other Modules Are Ready
+
+Use the mock generators in `shared/` to develop and test in isolation:
+
+- `shared/mock_detection.py` — fake WiFi detection scenarios (from Yubshan).
+- `shared/mock_navigation.py` — fake occupancy grids and robot pose for decision rules.
+
+These let you build and unit-test behavior tree nodes without waiting for the full stack or Pygame
+simulator to be running.
 
 ## RL Environment Notes
 
-The RL environment should be used for training and evaluation experiments, not
-as the only source of runtime safety behavior.
+Use RL for training and evaluation experiments, not as the only source of runtime safety behavior.
 
-Useful state features may include:
+**State features:** robot pose, local obstacles, explored-area %, frontier distance, detection
+confidence, distance to last known target.
 
-- Robot pose.
-- Local obstacle layout.
-- Explored-area percentage.
-- Frontier distance.
-- Detection confidence.
-- Distance to last known target estimate.
+**Reward signals:** reward for newly explored cells and confirmed targets; penalties for collisions,
+unsafe proximity, and wasted time.
 
-Useful reward signals may include:
+## Dependencies (planned)
 
-- Positive reward for newly explored cells.
-- Positive reward for confirming a target.
-- Penalty for collisions or unsafe proximity.
-- Small time penalty to encourage efficient search.
+Root `requirements.txt` currently lists simulation deps. Decision logic will additionally need:
+
+- `py_trees` — behavior tree runtime
+- `gymnasium` + `stable-baselines3` — RL training (optional, for `train_ppo.py`)
+
+Add these to `requirements.txt` when implementation begins.
 
 ## Development Checklist
 
-- Define the real blackboard key names before wiring runtime integration.
-- Add behavior tree unit tests as soon as behavior nodes are implemented.
-- Keep training artifacts, checkpoints, and logs out of git unless they are
-  intentionally small reference files.
-- Update this README whenever the module contract changes.
+- [ ] Agree on blackboard key names with navigation and WiFi leads.
+- [ ] Implement `brain.py` runtime loop at 10 Hz.
+- [ ] Add behavior tree nodes under `behavior_tree/`.
+- [ ] Add unit tests for each behavior node.
+- [ ] Keep training checkpoints and logs out of git.
+- [ ] Update this README when the module contract changes.
