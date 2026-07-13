@@ -1,6 +1,7 @@
 # Navigation & Environmental Mapping Module
 
 **Owner:** Anusha Shrestha (Navigation & Mapping / Teammate A)
+<br />
 **Project:** Drishya — autonomous rescue robot for search-and-exploration missions
 
 This module gives the robot spatial awareness. It reads sensor data (simulated or real), maintains a real-time occupancy grid of the environment, and calculates the safest path to any target position. It writes the grid, path, and robot position to the shared blackboard for Decision Logic and Simulation & Visualization to use.
