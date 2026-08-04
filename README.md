@@ -97,11 +97,17 @@ Each module runs independently and continuously updates or reads information fro
 
 To make sure every module understands the robot's location in the same way, the project uses a common coordinate system.
 
-- Origin (0,0) is the robot's starting position.
+- Origin `(0, 0)` is the robot's starting position.
+- The robot initially faces the positive X direction.
 - Positive X points forward from the robot.
 - Positive Y points to the robot's left side.
+- Initial robot heading is `0°`.
 - One grid cell represents **10 cm**.
 - The simulation map contains **50 × 50 cells**, representing an area of **5 m × 5 m**.
+- The physical origin `(0, 0)` corresponds to grid cell `(25, 25)`.
+- X coordinates correspond to grid columns.
+- Y coordinates correspond to grid rows.
+
 
 Every module follows this coordinate system when sharing position information.
 

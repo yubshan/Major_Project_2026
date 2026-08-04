@@ -1,14 +1,54 @@
-# Requirement / Purpose: A central configuration file holding hardcoded mathematical constants for your environment 
-# (e.g., GRID_SIZE = 50, CELL_SCALE_CM = 10, ORIGIN = (0,0)).
+## Official Coordinate Convention
+# Origin: (0, 0), robot's physical starting position
+# Initial robot position: (0, 0)
+# Initial robot heading: 0°
+# +X: forward
+# +Y: left
+# -X: backward
+# -Y: right
 
-# Why it is needed: Spatial alignment. If Yubshan thinks 1 grid unit means 1 meter, 
-# Teammate A thinks it means 10cm, and Teammate C scales pixels differently in Pygame,
-#  the robot's pathfinding will be completely broken. This file forces the entire team to use an identical 
-# spatial language.
+# 1 grid unit = 10 cm
+# Grid size = 50 × 50 cells
+# Physical area = 5 m × 5 m
 
-# Teammate Roles:
+# The robot's physical starting point (0,0) is placed in the middle of the 50×50 map, rather than at the corner.
 
-#     Teammate A: Defines the coordinates (Origin = robot start, positive X = forward, positive Y = left).
+GRID_WIDTH = 50
+GRID_HEIGHT = 50
 
-#     Yubshan, Teammate B, Teammate C: Import these constants. When calculating coordinates or rendering shapes, 
-# they multiply or divide by these exact values to keep the math unified.
+GRID_CENTER_X = 25
+GRID_CENTER_Y = 25
+
+CELL_SIZE_CM = 10
+
+FREE = 0
+OCCUPIED = 1
+UNKNOWN = 2
+
+INITIAL_X = 0.0
+INITIAL_Y = 0.0
+INITIAL_HEADING = 0.0
+
+def world_to_grid(x, y):
+    """Convert physical position (cm) to grid cell (row, col)."""
+    col = round(x / CELL_SIZE_CM) + GRID_CENTER_X
+    row = round(-y / CELL_SIZE_CM) + GRID_CENTER_Y
+    return row, col
+
+def grid_to_world(row, column):
+    """Convert grid cell (row, col) to physical position (cm), cell center."""
+    x = (column - GRID_CENTER_X) * CELL_SIZE_CM
+    y = -(row - GRID_CENTER_Y) * CELL_SIZE_CM
+    return x, y
+
+print(world_to_grid(0, 0))    
+print(world_to_grid(10, 0))
+print(world_to_grid(0, 10))
+print(world_to_grid(-10, 0))
+print(world_to_grid(0, -10))
+
+print(grid_to_world(25, 25))     
+print(grid_to_world(25, 26))     
+print(grid_to_world(24, 25))     
+print(grid_to_world(25, 24))     
+print(grid_to_world(26, 25))     
