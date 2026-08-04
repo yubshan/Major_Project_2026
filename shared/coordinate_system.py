@@ -39,4 +39,4 @@ def grid_to_world(row, column):
     """Convert grid cell (row, col) to physical position (cm), cell center."""
     x = (column - GRID_CENTER_X) * CELL_SIZE_CM
     y = -(row - GRID_CENTER_Y) * CELL_SIZE_CM
-    return x, y
+    return x, y  
