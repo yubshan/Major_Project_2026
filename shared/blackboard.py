@@ -6,13 +6,21 @@
 # Teammate B's decision tree tries to read it, Python will throw a fatal runtime error or corrupt the data. 
 # This file safely gates access so only one thread can touch the data at a time.
 
-# Teammate Roles:
 
-#     Teammate A: Writes and maintains the thread-safe Blackboard class code.
 
-#     Yubshan (WiFi Lead): Imports it; calls blackboard.set("detection/result", ...) every 1–2 seconds.
+import threading  # provides a Lock through the threading module.
 
-#     Teammate B (Decision Lead): Imports it; continuously reads everything to tick the Behavior Tree, 
-#                                 then writes the final output to state/motor_command.
+class Blackboard:
 
-#     Teammate C (Sim Lead): Imports it; continuously reads all states to draw them onto the 4-panel Pygame screen.
+    def __init__(self):
+        self._data = {}                 # shared dictionary
+        self._lock = threading.Lock()   # protects data when different threads access it.
+
+    def set(self, key, value):
+        with self._lock:
+            self._data[key] = value
+
+    def get(self, key, default=None):    #retrieving the value
+        with self._lock:
+            return self._data.get(key, default)
+        
