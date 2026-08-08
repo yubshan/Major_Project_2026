@@ -1,10 +1,10 @@
-# Project Drisya
+# Project Drishya
 
 ## Overview
 
-Project Drisya is a Search and Rescue (SAR) autonomous robot being developed to help locate people trapped under collapsed buildings during disasters such as earthquakes. The main idea behind this project is to detect human presence even when the person cannot be seen directly because of walls, concrete, or heavy rubble.
+Project Drishya is a Search and Rescue (SAR) autonomous robot being developed to help locate people trapped under collapsed buildings during disasters such as earthquakes. The main idea behind this project is to detect human presence even when the person cannot be seen directly because of walls, concrete, or heavy rubble.
 
-Most rescue systems depend on cameras or infrared (IR) sensors. These sensors work well when the victim is visible, but they cannot detect people hidden behind thick obstacles. Project Drisya tries to solve this problem by using **WiFi Channel State Information (CSI)**. Since WiFi signals can pass through many building materials, the changes in these signals caused by a human body can be analyzed to estimate the presence and location of a trapped person.
+Most rescue systems depend on cameras or infrared (IR) sensors. These sensors work well when the victim is visible, but they cannot detect people hidden behind thick obstacles. Project Drishya tries to solve this problem by using **WiFi Channel State Information (CSI)**. Since WiFi signals can pass through many building materials, the changes in these signals caused by a human body can be analyzed to estimate the presence and location of a trapped person.
 
 The project is first developed completely in simulation before being deployed on real hardware. This allows us to test the algorithms safely, improve the system, and reduce hardware related problems during development.
 
@@ -334,4 +334,4 @@ The repository is organized so that each team member can work independently on t
 
 # Final Goal
 
-The final goal of Project Drisya is to develop an autonomous search and rescue robot that can detect trapped humans using WiFi CSI, navigate safely through disaster environments, and assist rescue teams by reducing search time and improving the chances of locating survivors.
+The final goal of Project Drishya is to develop an autonomous search and rescue robot that can detect trapped humans using WiFi CSI, navigate safely through disaster environments, and assist rescue teams by reducing search time and improving the chances of locating survivors.
