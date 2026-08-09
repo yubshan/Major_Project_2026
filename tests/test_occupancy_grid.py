@@ -2,7 +2,7 @@ import unittest
 
 import numpy as np
 
-from shared.occupancy_grid import (
+from modules.navigation.occupancy_grid import (
     OccupancyGrid,
     FREE,
     OCCUPIED,
@@ -86,6 +86,6 @@ class TestOccupancyGrid(unittest.TestCase):
         self.assertEqual(grid.get_cell(25, 26), FREE)
         self.assertEqual(grid.get_cell(25, 27), FREE)
         self.assertEqual(grid.get_cell(25, 28), FREE)
-        
+
 if __name__ == "__main__":
     unittest.main()
