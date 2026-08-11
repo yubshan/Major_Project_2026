@@ -4,13 +4,13 @@ from modules.navigation.mapping import (
     update_front_sensor,
     update_ultrasonic_sensors
 )
+
 from modules.navigation.occupancy_grid import (
     OccupancyGrid,
     FREE,
     OCCUPIED,
     UNKNOWN
 )
-
 
 class TestMapping(unittest.TestCase):
 
