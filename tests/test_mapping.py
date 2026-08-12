@@ -1,5 +1,7 @@
 import unittest
 
+from shared.mock_sensors import get_mock_sensor_packet
+
 from modules.navigation.mapping import (
     update_front_sensor,
     update_ultrasonic_sensors
@@ -95,6 +97,120 @@ class TestMapping(unittest.TestCase):
 
         # Right 45° sensor
         self.assertEqual(grid.get_cell(32, 32), OCCUPIED)
+
+    def test_obstacle_ahead_scenario(self):
+        grid = OccupancyGrid()
+
+        sensor_packet = get_mock_sensor_packet("obstacle_ahead")
+
+        update_ultrasonic_sensors(
+            grid=grid,
+            robot_x=0,
+            robot_y=0,
+            robot_heading=0,
+            sensor_packet=sensor_packet
+        )
+
+        self.assertEqual(grid.get_cell(25, 28), OCCUPIED)
+
+    def test_left_blocked_scenario(self):
+        grid = OccupancyGrid()
+
+        sensor_packet = get_mock_sensor_packet("left_blocked")
+
+        update_ultrasonic_sensors(
+            grid=grid,
+            robot_x=0,
+            robot_y=0,
+            robot_heading=0,
+            sensor_packet=sensor_packet
+        )
+
+        self.assertEqual(grid.get_cell(23, 27), OCCUPIED)
+        self.assertEqual(grid.get_cell(24, 26), FREE)
+
+
+    def test_right_blocked_scenario(self):
+        grid = OccupancyGrid()
+
+        sensor_packet = get_mock_sensor_packet("right_blocked")
+
+        update_ultrasonic_sensors(
+            grid=grid,
+            robot_x=0,
+            robot_y=0,
+            robot_heading=0,
+            sensor_packet=sensor_packet
+        )
+
+        self.assertEqual(grid.get_cell(27, 27), OCCUPIED)
+        self.assertEqual(grid.get_cell(26, 26), FREE)
+
+
+    def test_open_front_scenario(self):
+        grid = OccupancyGrid()
+
+        sensor_packet = get_mock_sensor_packet("open_front")
+
+        update_ultrasonic_sensors(
+            grid=grid,
+            robot_x=0,
+            robot_y=0,
+            robot_heading=0,
+            sensor_packet=sensor_packet
+        )
+
+        self.assertEqual(grid.get_cell(25, 45), OCCUPIED)
+
+    def test_narrow_corridor_scenario(self):
+        grid = OccupancyGrid()
+
+        sensor_packet = get_mock_sensor_packet("narrow_corridor")
+
+        update_ultrasonic_sensors(
+            grid=grid,
+            robot_x=0,
+            robot_y=0,
+            robot_heading=0,
+            sensor_packet=sensor_packet
+        )
+
+        # Front remains open
+        self.assertEqual(grid.get_cell(25, 45), OCCUPIED)
+
+        # Left 90° obstacle: 30 cm
+        self.assertEqual(grid.get_cell(22, 25), OCCUPIED)
+
+        # Right 90° obstacle: 30 cm
+        self.assertEqual(grid.get_cell(28, 25), OCCUPIED)
+        
+    def test_all_blocked_scenario(self):
+        grid = OccupancyGrid()
+
+        sensor_packet = get_mock_sensor_packet("all_blocked")
+
+        update_ultrasonic_sensors(
+            grid=grid,
+            robot_x=0,
+            robot_y=0,
+            robot_heading=0,
+            sensor_packet=sensor_packet
+        )
+
+        # Front: 20 cm
+        self.assertEqual(grid.get_cell(25, 27), OCCUPIED)
+
+        # Left 45°: 20 cm
+        self.assertEqual(grid.get_cell(24, 26), OCCUPIED)
+
+        # Left 90°: 20 cm
+        self.assertEqual(grid.get_cell(23, 25), OCCUPIED)
+
+        # Right 45°: 20 cm
+        self.assertEqual(grid.get_cell(26, 26), OCCUPIED)
+
+        # Right 90°: 20 cm
+        self.assertEqual(grid.get_cell(27, 25), OCCUPIED)
 
 if __name__ == "__main__":
     unittest.main()
