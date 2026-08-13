@@ -43,15 +43,38 @@ class OccupancyGrid:
     def update_ray(self, start, end, obstacle_detected=True):
         cells = bresenham_line(start, end)
 
-        if obstacle_detected:
-            for cell in cells[:-1]:
-                row, col = cell
-                self.set_cell(row, col, FREE)
+        valid_cells = []
 
-            row, col = cells[-1]
+        for cell in cells:
+            row, col = cell
+
+            if not self._is_valid_cell(row, col):
+                break
+
+            valid_cells.append(cell)
+
+        if not valid_cells:
+            return
+
+        if obstacle_detected and len(valid_cells) == len(cells):
+            # Mark cells before the obstacle as FREE.
+            for cell in valid_cells[:-1]:
+                row, col = cell
+
+                # Never overwrite an OCCUPIED cell with FREE.
+                if self.get_cell(row, col) != OCCUPIED:
+                    self.set_cell(row, col, FREE)
+
+            # The final cell contains the detected obstacle.
+            row, col = valid_cells[-1]
             self.set_cell(row, col, OCCUPIED)
 
         else:
-            for cell in cells:
+            # The ray reached the map boundary before its
+            # reported obstacle distance.
+            for cell in valid_cells:
                 row, col = cell
-                self.set_cell(row, col, FREE)
+
+                # Never overwrite an OCCUPIED cell with FREE.
+                if self.get_cell(row, col) != OCCUPIED:
+                    self.set_cell(row, col, FREE)

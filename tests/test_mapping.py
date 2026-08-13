@@ -4,7 +4,10 @@ from shared.mock_sensors import get_mock_sensor_packet
 
 from modules.navigation.mapping import (
     update_front_sensor,
-    update_ultrasonic_sensors
+    update_ultrasonic_sensors,
+    update_tof_cell,
+    update_tof_grid,
+    update_map
 )
 
 from modules.navigation.occupancy_grid import (
@@ -212,5 +215,129 @@ class TestMapping(unittest.TestCase):
         # Right 90°: 20 cm
         self.assertEqual(grid.get_cell(27, 25), OCCUPIED)
 
+    def test_tof_single_cell(self):
+        grid = OccupancyGrid()
+
+        update_tof_cell(
+            grid=grid,
+            robot_x=0,
+            robot_y=0,
+            robot_heading=0,
+            distance_cm=100,
+            row=3,
+            col=3
+        )
+
+        self.assertEqual(grid.get_cell(25, 35), OCCUPIED)
+    
+    def test_tof_invalid_measurement(self):
+        grid = OccupancyGrid()
+
+        update_tof_cell(
+            grid=grid,
+            robot_x=0,
+            robot_y=0,
+            robot_heading=0,
+            distance_cm=0,
+            row=3,
+            col=3
+        )
+
+        self.assertEqual(grid.get_cell(25, 25), UNKNOWN)
+
+    def test_tof_grid(self):
+        grid = OccupancyGrid()
+
+        tof_grid = [[0] * 8 for _ in range(8)]
+
+        # Put one valid measurement in the grid.
+        tof_grid[3][3] = 100
+
+        update_tof_grid(
+            grid=grid,
+            robot_x=0,
+            robot_y=0,
+            robot_heading=0,
+            tof_grid=tof_grid
+        )
+
+        self.assertEqual(grid.get_cell(25, 35), OCCUPIED)
+    
+    def test_multiple_tof_cells(self):
+        grid = OccupancyGrid()
+
+        tof_grid = [[0] * 8 for _ in range(8)]
+
+        # Two valid ToF measurements
+        tof_grid[3][3] = 100
+        tof_grid[3][4] = 100
+
+        update_tof_grid(
+            grid=grid,
+            robot_x=0,
+            robot_y=0,
+            robot_heading=0,
+            tof_grid=tof_grid
+        )
+
+        self.assertEqual(grid.get_cell(25, 35), OCCUPIED)
+    
+    def test_tof_left_and_right_zones(self):
+        grid = OccupancyGrid()
+
+        tof_grid = [[0] * 8 for _ in range(8)]
+
+        # Leftmost and rightmost ToF zones
+        tof_grid[3][0] = 100
+        tof_grid[3][7] = 100
+
+        update_tof_grid(
+            grid=grid,
+            robot_x=0,
+            robot_y=0,
+            robot_heading=0,
+            tof_grid=tof_grid
+        )
+
+        # Leftmost zone
+        self.assertEqual(grid.get_cell(28, 34), OCCUPIED)
+
+        # Rightmost zone
+        self.assertEqual(grid.get_cell(22, 34), OCCUPIED)
+    
+    def test_tof_respects_robot_heading(self):
+        grid = OccupancyGrid()
+
+        tof_grid = [[0] * 8 for _ in range(8)]
+
+        # Use a central ToF zone
+        tof_grid[3][3] = 100
+
+        update_tof_grid(
+            grid=grid,
+            robot_x=0,
+            robot_y=0,
+            robot_heading=90,
+            tof_grid=tof_grid
+        )
+
+        self.assertEqual(grid.get_cell(15, 25), OCCUPIED)
+
+    def test_complete_sensor_packet(self):
+        grid = OccupancyGrid()
+
+        sensor_packet = get_mock_sensor_packet("obstacle_ahead")
+
+        update_map(
+            grid=grid,
+            robot_x=0,
+            robot_y=0,
+            robot_heading=0,
+            sensor_packet=sensor_packet
+        )
+
+        # Front ultrasonic sensor detects obstacle at 30 cm
+        self.assertEqual(grid.get_cell(25, 28), OCCUPIED)
+        
 if __name__ == "__main__":
     unittest.main()
