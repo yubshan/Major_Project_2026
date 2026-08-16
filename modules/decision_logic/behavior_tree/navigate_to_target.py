@@ -15,6 +15,8 @@
 import math
 import py_trees
 from shared.coordinate_system import world_to_grid, grid_to_world
+from modules.decision_logic.contracts import ROBOT_POSE, TARGET_WAYPOINT
+from modules.decision_logic.decision_output import publish_decision
 
 ARRIVAL_RADIUS_CELLS = 2    # cells — considered "arrived" within this range
 NAV_SPEED            = 130  # motor speed during navigation
@@ -64,8 +66,8 @@ class NavigateToTarget(py_trees.behaviour.Behaviour):
         self.bb = blackboard
 
     def update(self) -> py_trees.common.Status:
-        waypoint   = self.bb.get("navigation/target_waypoint")
-        robot_pose = self.bb.get("navigation/robot_pose")
+        waypoint   = self.bb.get(TARGET_WAYPOINT)
+        robot_pose = self.bb.get(ROBOT_POSE)
 
         if waypoint is None:
             self.feedback_message = "No active waypoint"
@@ -81,18 +83,29 @@ class NavigateToTarget(py_trees.behaviour.Behaviour):
 
         if dist <= ARRIVAL_RADIUS_CELLS:
             # Arrived! Clear the waypoint
-            self.bb.set("navigation/target_waypoint", None)
-            self.bb.set("state/bt_status", "ARRIVED_AT_TARGET")
-            self.bb.set("state/motor_command",
-                        {"left_speed": 0, "right_speed": 0, "duration_ms": 200})
+            self.bb.set(TARGET_WAYPOINT, None)
+            publish_decision(
+                self.bb,
+                behavior=self.name,
+                status="ARRIVED_AT_TARGET",
+                reason=f"distance_cells={dist:.2f}_within_{ARRIVAL_RADIUS_CELLS}",
+                source_layer="BT_MISSION",
+                command={"left_speed": 0, "right_speed": 0, "duration_ms": 200},
+            )
             self.feedback_message = "Arrived at waypoint"
-            return py_trees.common.Status.FAILURE   # Done — fall through
+            return py_trees.common.Status.SUCCESS
 
         # Still navigating
         motor_cmd = _steer_toward(robot_pose, target_row, target_col)
-        self.bb.set("state/motor_command", motor_cmd)
-        self.bb.set("state/bt_status",
-                    f"NAVIGATING_TO_TARGET [dist={dist:.1f} cells]")
+        status = f"NAVIGATING_TO_TARGET [dist={dist:.1f} cells]"
+        publish_decision(
+            self.bb,
+            behavior=self.name,
+            status=status,
+            reason=f"active_waypoint={waypoint};distance_cells={dist:.2f}",
+            source_layer="BT_MISSION",
+            command=motor_cmd,
+        )
 
         self.feedback_message = f"En-route to {waypoint}, dist={dist:.1f} cells"
         return py_trees.common.Status.RUNNING

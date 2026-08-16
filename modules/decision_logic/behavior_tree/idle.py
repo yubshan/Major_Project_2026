@@ -14,11 +14,7 @@
 
 import py_trees
 
-IDLE_COMMAND = {
-    "left_speed":  0,
-    "right_speed": 0,
-    "duration_ms": 0,
-}
+from modules.decision_logic.decision_output import STOP_COMMAND, publish_decision
 
 
 class Idle(py_trees.behaviour.Behaviour):
@@ -31,7 +27,13 @@ class Idle(py_trees.behaviour.Behaviour):
         self.bb = blackboard
 
     def update(self) -> py_trees.common.Status:
-        self.bb.set("state/motor_command", IDLE_COMMAND)
-        self.bb.set("state/bt_status", "IDLE — awaiting mission")
+        publish_decision(
+            self.bb,
+            behavior=self.name,
+            status="IDLE — awaiting mission",
+            reason="no_actionable_mission_behavior",
+            source_layer="BT_FALLBACK",
+            command=STOP_COMMAND,
+        )
         self.feedback_message = "Idle, waiting for mission start"
         return py_trees.common.Status.SUCCESS

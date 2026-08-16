@@ -321,14 +321,15 @@ The repository is organized so that each team member can work independently on t
 
 # Current Progress
 
-- [ ] Build Simulation Environment
-- [ ] Occupancy Grid Mapping
-- [ ] WiFi CSI Data Collection
-- [ ] CNN Training
-- [ ] Human Localization
-- [ ] Decision Logic
-- [ ] Dashboard Visualization
-- [ ] Hardware Integration
+| Component | Status |
+|---|---|
+| Shared Blackboard, coordinates, and sensor validation | Implemented and tested |
+| Ultrasonic/ToF occupancy-grid mapping | Implemented and tested |
+| Decision Behavior Tree and integration harness | Implemented; integration hardening in progress |
+| Gymnasium/PPO exploration | Environment and training scaffold; no benchmarked checkpoint yet |
+| Simulation and dashboard | Early rendering and standalone sensor prototype |
+| WiFi CSI collection, CNN, and localization | Not yet integrated in this repository |
+| Hardware integration | Planned |
 
 ---
 

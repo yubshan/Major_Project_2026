@@ -21,6 +21,8 @@ from modules.decision_logic.rl_env.sar_explore_env import (
 from shared.coordinate_system import (
     GRID_WIDTH, GRID_HEIGHT, GRID_CENTER_X, GRID_CENTER_Y, UNKNOWN,
 )
+from modules.decision_logic.contracts import OCCUPANCY_GRID, ROBOT_POSE
+from modules.decision_logic.decision_output import publish_decision
 
 # Path to the saved PPO checkpoint
 DEFAULT_MODEL_PATH = os.path.abspath(os.path.join(
@@ -93,13 +95,12 @@ class RLExplore(py_trees.behaviour.Behaviour):
     def update(self) -> py_trees.common.Status:
         self._try_load_model()
 
-        grid    = self.bb.get("navigation/occupancy_grid")
-        pose    = self.bb.get("navigation/robot_pose")
+        grid    = self.bb.get(OCCUPANCY_GRID)
+        pose    = self.bb.get(ROBOT_POSE)
 
         if grid is None or pose is None:
-            # No environment data — use heuristic on blank grid
-            grid    = np.full((GRID_HEIGHT, GRID_WIDTH), UNKNOWN, dtype=np.int8)
-            pose    = {"x": 0.0, "y": 0.0, "heading": 0.0}
+            self.feedback_message = "Missing map or pose"
+            return py_trees.common.Status.FAILURE
 
         from shared.coordinate_system import world_to_grid
         robot_row, robot_col = world_to_grid(pose["x"], pose["y"])
@@ -127,10 +128,18 @@ class RLExplore(py_trees.behaviour.Behaviour):
         motor_cmd = SARExploreEnv.action_to_motor_command(action)
         action_name = ACTION_NAMES.get(action, "?")
 
-        self.bb.set("state/motor_command", motor_cmd)
-        self.bb.set("state/bt_status",
-                    f"RL_EXPLORE [{source}] → {action_name} "
-                    f"(unknown={unknown_count} cells)")
+        status = (
+            f"RL_EXPLORE [{source}] → {action_name} "
+            f"(unknown={unknown_count} cells)"
+        )
+        publish_decision(
+            self.bb,
+            behavior=self.name,
+            status=status,
+            reason=f"source={source};unknown_cells={unknown_count};action={action_name}",
+            source_layer="RL_POLICY" if source == "PPO" else "HEURISTIC_EXPLORATION",
+            command=motor_cmd,
+        )
 
         explore_pct = 100.0 * (1 - unknown_count / (GRID_WIDTH * GRID_HEIGHT))
         self.feedback_message = (

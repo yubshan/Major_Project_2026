@@ -25,6 +25,7 @@ import time
 import py_trees
 
 from modules.decision_logic.behavior_tree.tree_builder import build_tree
+from modules.decision_logic.contracts import DECISION_TICK_ID
 
 logger = logging.getLogger(__name__)
 
@@ -55,18 +56,25 @@ class Brain:
         self._tree       = build_tree(blackboard, model_path=model_path)
         self._thread     = None
         self._running    = False
+        self._is_setup   = False
         self._tick_count = 0
 
     # ------------------------------------------------------------------
     # Public interface
     # ------------------------------------------------------------------
 
+    def setup(self):
+        """Initialize behavior resources once before manual or threaded ticks."""
+        if not self._is_setup:
+            self._tree.setup(timeout=5)
+            self._is_setup = True
+
     def start(self):
         """Start the brain in a background thread (non-blocking)."""
         if self._running:
             logger.warning("Brain is already running")
             return
-        self._tree.setup(timeout=5)
+        self.setup()
         self._running = True
         self._thread = threading.Thread(target=self._loop, daemon=True, name="DrishyaBrain")
         self._thread.start()
@@ -84,6 +92,8 @@ class Brain:
         Manually tick the tree once (useful for testing without threads).
         Returns the tip (active leaf node).
         """
+        self.setup()
+        self.bb.set(DECISION_TICK_ID, self._tick_count + 1)
         self._tree.tick()
         self._tick_count += 1
         return self._tree.tip()
@@ -98,6 +108,7 @@ class Brain:
             t_start = time.perf_counter()
 
             try:
+                self.bb.set(DECISION_TICK_ID, self._tick_count + 1)
                 self._tree.tick()
                 self._tick_count += 1
 
@@ -132,6 +143,7 @@ if __name__ == "__main__":
         get_mock_detection,
         get_mock_nav_state,
     )
+    from modules.decision_logic.contracts import MISSION_CONTROL, PROXIMITY, ROBOT_POSE, now_ms
 
     bb = Blackboard()
 
@@ -143,12 +155,24 @@ if __name__ == "__main__":
     bb.set("navigation/target_waypoint", nav["target_waypoint"])
     bb.set("sensor/proximity",          nav["proximity"])
     bb.set("detection/result",          det)
+    bb.set(MISSION_CONTROL, {
+        "mode": "run",
+        "emergency_stop": False,
+        "timestamp_ms": now_ms(),
+    })
 
     brain = Brain(bb)
     brain.start()
 
     try:
         for _ in range(30):
+            timestamp_ms = now_ms()
+            pose = dict(bb.get(ROBOT_POSE))
+            proximity = dict(bb.get(PROXIMITY))
+            pose["timestamp_ms"] = timestamp_ms
+            proximity["timestamp_ms"] = timestamp_ms
+            bb.set(ROBOT_POSE, pose)
+            bb.set(PROXIMITY, proximity)
             time.sleep(0.1)
             bt_status = bb.get("state/bt_status", "–")
             motor_cmd  = bb.get("state/motor_command", {})

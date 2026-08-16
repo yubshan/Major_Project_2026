@@ -15,10 +15,13 @@ import pytest
 from shared.blackboard      import Blackboard
 from shared.coordinate_system import UNKNOWN
 from modules.decision_logic.demo_data import get_mock_detection, get_mock_nav_state
+from modules.decision_logic.contracts import MISSION_CONTROL, now_ms
+from modules.decision_logic.decision_output import sanitize_motor_command
 
 import py_trees
 
 from modules.decision_logic.behavior_tree.emergency_stop      import EmergencyStop
+from modules.decision_logic.behavior_tree.safety_gate         import SafetyGate
 from modules.decision_logic.behavior_tree.victim_confirmation  import VictimConfirmation
 from modules.decision_logic.behavior_tree.navigate_to_target  import NavigateToTarget
 from modules.decision_logic.behavior_tree.rl_explore          import RLExplore
@@ -42,6 +45,11 @@ def bb_with_nav(scenario: str, detection: str = "no_human") -> Blackboard:
     bb.set("navigation/target_waypoint", nav["target_waypoint"])
     bb.set("sensor/proximity",           nav["proximity"])
     bb.set("detection/result",           det)
+    bb.set(MISSION_CONTROL, {
+        "mode": "run",
+        "emergency_stop": False,
+        "timestamp_ms": now_ms(),
+    })
     return bb
 
 
@@ -81,6 +89,56 @@ class TestEmergencyStop:
         assert "EMERGENCY_STOP" in status
 
 
+# ─── SafetyGate ──────────────────────────────────────────────────────────────
+
+class TestSafetyGate:
+
+    def test_missing_mission_control_stops(self):
+        bb = fresh_bb()
+        node = SafetyGate(bb)
+        assert node.update() == py_trees.common.Status.SUCCESS
+        assert bb.get("state/motor_command") == {
+            "left_speed": 0, "right_speed": 0, "duration_ms": 0
+        }
+
+    def test_idle_mission_stops_before_state_validation(self):
+        bb = fresh_bb()
+        bb.set(MISSION_CONTROL, {"mode": "idle", "emergency_stop": False})
+        node = SafetyGate(bb)
+        assert node.update() == py_trees.common.Status.SUCCESS
+        assert "MISSION_IDLE" in bb.get("state/bt_status", "")
+
+    def test_valid_live_state_allows_tree_to_continue(self):
+        bb = bb_with_nav("exploring")
+        node = SafetyGate(bb)
+        assert node.update() == py_trees.common.Status.FAILURE
+
+    def test_stale_pose_stops(self):
+        bb = bb_with_nav("exploring")
+        pose = dict(bb.get("navigation/robot_pose"))
+        pose["timestamp_ms"] = 1
+        bb.set("navigation/robot_pose", pose)
+        node = SafetyGate(bb)
+        assert node.update() == py_trees.common.Status.SUCCESS
+        assert bb.get("decision/trace")["reason"] == "robot_pose_stale"
+
+    def test_operator_emergency_stop(self):
+        bb = bb_with_nav("exploring")
+        bb.set(MISSION_CONTROL, {"mode": "run", "emergency_stop": True})
+        node = SafetyGate(bb)
+        assert node.update() == py_trees.common.Status.SUCCESS
+        assert "EMERGENCY_STOP" in bb.get("state/bt_status", "")
+
+    def test_non_finite_timestamp_stops(self):
+        bb = bb_with_nav("exploring")
+        pose = dict(bb.get("navigation/robot_pose"))
+        pose["timestamp_ms"] = float("nan")
+        bb.set("navigation/robot_pose", pose)
+        node = SafetyGate(bb)
+        assert node.update() == py_trees.common.Status.SUCCESS
+        assert bb.get("decision/trace")["reason"] == "robot_pose_stale"
+
+
 # ─── VictimConfirmation ──────────────────────────────────────────────────────
 
 class TestVictimConfirmation:
@@ -117,14 +175,50 @@ class TestVictimConfirmation:
         bb  = fresh_bb()
         # Exactly at threshold — should succeed
         bb.set("detection/result", {"human_x": 10.0, "human_y": 10.0,
-                                    "confidence": 0.85, "timestamp": 0})
+                                    "confidence": 0.85, "timestamp_ms": now_ms()})
         node = VictimConfirmation(bb)
         assert node.update() == py_trees.common.Status.SUCCESS
 
         # Just below threshold — should fail
         bb.set("detection/result", {"human_x": 10.0, "human_y": 10.0,
-                                    "confidence": 0.84, "timestamp": 0})
+                                    "confidence": 0.84, "timestamp_ms": now_ms()})
         assert node.update() == py_trees.common.Status.FAILURE
+
+    def test_stale_detection_is_ignored(self):
+        bb = fresh_bb()
+        bb.set("detection/result", {
+            "human_x": 10.0,
+            "human_y": 10.0,
+            "confidence": 0.95,
+            "timestamp_ms": 1,
+        })
+        node = VictimConfirmation(bb)
+        assert node.update() == py_trees.common.Status.FAILURE
+
+    def test_out_of_bounds_detection_is_ignored(self):
+        bb = fresh_bb()
+        bb.set("detection/result", {
+            "human_x": 10_000.0,
+            "human_y": 10_000.0,
+            "confidence": 0.95,
+            "timestamp_ms": now_ms(),
+        })
+        node = VictimConfirmation(bb)
+        assert node.update() == py_trees.common.Status.FAILURE
+
+    def test_new_timestamp_allows_reconfirmation(self):
+        bb = fresh_bb()
+        detection = {
+            "human_x": 10.0,
+            "human_y": 10.0,
+            "confidence": 0.95,
+            "timestamp_ms": now_ms(),
+        }
+        bb.set("detection/result", detection)
+        node = VictimConfirmation(bb)
+        assert node.update() == py_trees.common.Status.SUCCESS
+        bb.set("detection/result", {**detection, "timestamp_ms": detection["timestamp_ms"] + 1})
+        assert node.update() == py_trees.common.Status.SUCCESS
 
 
 # ─── NavigateToTarget ────────────────────────────────────────────────────────
@@ -149,6 +243,14 @@ class TestNavigateToTarget:
         node.update()
         cmd = bb.get("state/motor_command")
         assert cmd is not None
+
+    def test_arrival_returns_success_and_preserves_stop(self):
+        bb = bb_with_nav("exploring")
+        bb.set("navigation/target_waypoint", (24, 28))
+        node = NavigateToTarget(bb)
+        assert node.update() == py_trees.common.Status.SUCCESS
+        assert bb.get("state/bt_status") == "ARRIVED_AT_TARGET"
+        assert bb.get("state/motor_command")["left_speed"] == 0
 
 
 # ─── RLExplore ───────────────────────────────────────────────────────────────
@@ -178,9 +280,9 @@ class TestRLExplore:
     def test_no_data_still_works(self):
         bb   = fresh_bb()    # empty blackboard
         node = RLExplore(bb)
-        # Should not raise, should return RUNNING (heuristic on blank grid)
+        # Missing state must defer to safe Idle/SafetyGate rather than inventing data.
         result = node.update()
-        assert result in (py_trees.common.Status.RUNNING, py_trees.common.Status.FAILURE)
+        assert result == py_trees.common.Status.FAILURE
 
 
 # ─── Idle ────────────────────────────────────────────────────────────────────
@@ -210,6 +312,16 @@ class TestIdle:
 # ─── Full Tree Integration ────────────────────────────────────────────────────
 
 class TestFullTree:
+
+    def test_empty_blackboard_fails_safe(self):
+        bb = fresh_bb()
+        tree = build_tree(bb)
+        tree.setup(timeout=5)
+        tree.tick()
+        assert bb.get("state/bt_status") == "SAFE_STOP"
+        assert bb.get("state/motor_command") == {
+            "left_speed": 0, "right_speed": 0, "duration_ms": 0
+        }
 
     def test_tree_ticks_without_error(self):
         bb   = bb_with_nav("exploring", "no_human")
@@ -262,6 +374,16 @@ class TestFullTree:
         assert bb.get("state/bt_status") is not None
         assert bb.get("state/motor_command") is not None
 
+    def test_decision_trace_is_published(self):
+        bb = bb_with_nav("obstacle_ahead", "strong_detection")
+        tree = build_tree(bb)
+        tree.setup(timeout=5)
+        tree.tick()
+        trace = bb.get("decision/trace")
+        assert trace["source_layer"] == "BT_SAFETY"
+        assert trace["selected_action"] == "EmergencyStop"
+        assert trace["command"]["left_speed"] == 0
+
 
 # ─── SARExploreEnv sanity ────────────────────────────────────────────────────
 
@@ -290,3 +412,15 @@ class TestSAREnv:
             assert "left_speed"  in cmd
             assert "right_speed" in cmd
             assert "duration_ms" in cmd
+
+    def test_motor_commands_are_clamped(self):
+        command = sanitize_motor_command({
+            "left_speed": 999,
+            "right_speed": -999,
+            "duration_ms": 9999,
+        })
+        assert command == {
+            "left_speed": 255,
+            "right_speed": -255,
+            "duration_ms": 1000,
+        }
