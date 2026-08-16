@@ -13,8 +13,14 @@ The decision stack is planned to combine:
 - **Reinforcement learning** experiments (Stable-Baselines3 PPO) for exploration strategy tuning.
 - A lightweight **runtime loop** (`brain.py`) that ticks the decision logic at 10 Hz.
 
-Implementation has not started yet. This README defines the module contract so navigation, WiFi
-detection, and simulation can integrate without tight coupling.
+The initial implementation includes a priority behavior tree, a Gymnasium exploration environment,
+PPO training support, mock-driven tests, and a terminal demo.
+
+Install its dependencies from the repository root:
+
+```bash
+python -m pip install -r modules/decision_logic/requirements.txt
+```
 
 ## Role in the System
 
@@ -34,7 +40,8 @@ Per `shared/blackboard.py`, this module should:
 - **Read** blackboard keys written by WiFi detection, navigation, and sensors.
 - **Write** outputs such as `state/motor_command` and behavior state for the simulator UI.
 
-Exact key names are not finalized yet. Agree on them with the team before wiring integration.
+The current blackboard contract is documented below. Coordinate any contract change with the
+navigation, sensing, and WiFi-detection owners.
 
 ## Responsibilities
 
@@ -55,31 +62,28 @@ decision_logic/
 └── train_ppo.py          # PPO training entry point for exploration policies
 ```
 
-Files other than this README do not exist yet. Add them as implementation progresses.
-
 ## Blackboard Contract
 
 Treat `shared/` as the only integration boundary. Do not import sibling modules directly unless the
 team agrees on a shared API.
 
-### Likely inputs
+### Inputs
 
-| Source | Data |
-|--------|------|
-| Navigation | Robot pose, heading, occupancy grid, frontier state |
-| Sensors / simulation | Obstacle and proximity readings (see `shared/sensor_format.py`) |
-| WiFi detection | Detection confidence, estimated target location |
-| Mission control | Start, pause, emergency stop, completion flags |
+| Key | Value |
+|-----|-------|
+| `navigation/robot_pose` | `{x, y, heading}` in centimetres/degrees |
+| `navigation/occupancy_grid` | 50 x 50 NumPy array using the shared grid constants |
+| `navigation/target_waypoint` | `(row, col)` or `None` |
+| `sensor/proximity` | Direction-to-distance mapping in centimetres |
+| `detection/result` | Human position, confidence, and timestamp |
 
-### Likely outputs
+### Outputs
 
-| Consumer | Data |
-|----------|------|
-| Navigation | Target waypoint, exploration frontier, stop/resume commands |
-| Simulation dashboard | Current behavior state for display |
-| WiFi detection | Detection-confirmation requests when confidence is high |
-
-Document exact key names, value types, and owning module here once they are agreed.
+| Key | Value |
+|-----|-------|
+| `navigation/target_waypoint` | Confirmed victim waypoint |
+| `state/motor_command` | `{left_speed, right_speed, duration_ms}` |
+| `state/bt_status` | Human-readable active behavior state |
 
 ## Runtime Flow
 
@@ -105,10 +109,9 @@ command it owns.
 
 ## Developing Before Other Modules Are Ready
 
-Use the mock generators in `shared/` to develop and test in isolation:
+Use the module's deterministic demo fixtures to develop and test in isolation:
 
-- `shared/mock_detection.py` — fake WiFi detection scenarios (from Yubshan).
-- `shared/mock_navigation.py` — fake occupancy grids and robot pose for decision rules.
+- `modules/decision_logic/demo_data.py` — fake WiFi detections, occupancy grids, poses, and sensors.
 
 These let you build and unit-test behavior tree nodes without waiting for the full stack or Pygame
 simulator to be running.
@@ -135,8 +138,8 @@ Add these to `requirements.txt` when implementation begins.
 ## Development Checklist
 
 - [ ] Agree on blackboard key names with navigation and WiFi leads.
-- [ ] Implement `brain.py` runtime loop at 10 Hz.
-- [ ] Add behavior tree nodes under `behavior_tree/`.
-- [ ] Add unit tests for each behavior node.
-- [ ] Keep training checkpoints and logs out of git.
-- [ ] Update this README when the module contract changes.
+- [x] Implement `brain.py` runtime loop at 10 Hz.
+- [x] Add behavior tree nodes under `behavior_tree/`.
+- [x] Add unit tests for each behavior node.
+- [x] Keep training checkpoints and logs out of git.
+- [x] Document the current blackboard contract.
