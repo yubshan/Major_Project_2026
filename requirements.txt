@@ -2,3 +2,8 @@ numpy==2.4.6
 pygame-ce>=2.5.0
 pyserial==3.5
 websockets==16.0
+
+# Decision Logic — Brain Module (Module 3)
+py_trees>=2.2.3
+gymnasium>=0.29.0
+stable-baselines3>=2.3.0

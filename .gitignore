@@ -1,6 +1,60 @@
-.venv/
-
+# Python bytecode and caches
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
 
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+.drishya/
 drishya/
+
+# Packaging and build output
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Tests, coverage, and static-analysis caches
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.hypothesis/
+.mypy_cache/
+.pyright/
+.ruff_cache/
+.tox/
+.nox/
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+credentials*.json
+secrets*.json
+service-account*.json
+
+# Editors and operating systems
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Runtime and generated ML artifacts
+*.log
+*.pid
+logs/
+tmp/
+modules/decision_logic/models/
+modules/decision_logic/logs/
