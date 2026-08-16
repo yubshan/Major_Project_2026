@@ -22,6 +22,15 @@ Install its dependencies from the repository root:
 python -m pip install -r modules/decision_logic/requirements.txt
 ```
 
+For development and tests:
+
+```bash
+python -m pip install -r modules/decision_logic/requirements-dev.txt
+python -m pytest modules/decision_logic/tests -v
+```
+
+Run the merged navigation/decision integration check with `python main.py`.
+
 ## Role in the System
 
 ```text
@@ -71,11 +80,12 @@ team agrees on a shared API.
 
 | Key | Value |
 |-----|-------|
-| `navigation/robot_pose` | `{x, y, heading}` in centimetres/degrees |
+| `mission/control` | `{mode, emergency_stop, timestamp_ms}` |
+| `navigation/robot_pose` | `{x, y, heading, timestamp_ms}` in centimetres/degrees |
 | `navigation/occupancy_grid` | 50 x 50 NumPy array using the shared grid constants |
 | `navigation/target_waypoint` | `(row, col)` or `None` |
-| `sensor/proximity` | Direction-to-distance mapping in centimetres |
-| `detection/result` | Human position, confidence, and timestamp |
+| `sensor/proximity` | Five ultrasonic distances in centimetres plus `timestamp_ms` |
+| `detection/result` | Human position, confidence, and `timestamp_ms` |
 
 ### Outputs
 
@@ -84,6 +94,8 @@ team agrees on a shared API.
 | `navigation/target_waypoint` | Confirmed victim waypoint |
 | `state/motor_command` | `{left_speed, right_speed, duration_ms}` |
 | `state/bt_status` | Human-readable active behavior state |
+| `decision/state` | Current mission and active behavior |
+| `decision/trace` | Tick, reason, source layer, status, command, and timestamp |
 
 ## Runtime Flow
 
@@ -96,13 +108,14 @@ team agrees on a shared API.
 
 ## Behavior Tree Design
 
-Recommended top-level priority order:
+Implemented top-level priority order:
 
-1. Emergency stop or unsafe sensor state.
-2. Confirm and report a high-confidence victim detection.
-3. Navigate to an active target waypoint.
-4. Explore unknown frontier regions.
-5. Idle or wait for mission start.
+1. Reject inactive missions and invalid, missing, or stale critical state.
+2. Emergency stop for unsafe proximity.
+3. Confirm and report a fresh high-confidence victim detection.
+4. Navigate to an active target waypoint.
+5. Explore unknown regions using PPO or the deterministic fallback.
+6. Stop safely when no behavior is actionable.
 
 Keep nodes small and testable. Each node should read only the state it needs and write only the
 command it owns.
@@ -126,14 +139,21 @@ confidence, distance to last known target.
 **Reward signals:** reward for newly explored cells and confirmed targets; penalties for collisions,
 unsafe proximity, and wasted time.
 
-## Dependencies (planned)
+## Dependencies
 
-Root `requirements.txt` currently lists simulation deps. Decision logic will additionally need:
+Decision logic uses:
 
 - `py_trees` — behavior tree runtime
 - `gymnasium` + `stable-baselines3` — RL training (optional, for `train_ppo.py`)
 
-Add these to `requirements.txt` when implementation begins.
+Training checkpoints and logs are generated locally and ignored by Git.
+
+## Current Integration Boundary
+
+`main.py` currently proves that the merged navigation mapper can publish a 50 x 50 grid to the
+Blackboard and that the brain can consume it for idle, exploration, emergency, and victim scenarios.
+Sensor and WiFi publishers are deterministic mocks until the simulation and WiFi modules provide
+live adapters. The heuristic fallback is used when no trained PPO checkpoint is present.
 
 ## Development Checklist
 

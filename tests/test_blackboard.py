@@ -17,5 +17,15 @@ class TestBlackboard(unittest.TestCase):
     def test_get_with_default(self):
         self.assertEqual(self.blackboard.get("non_existent_key", "default_value"), "default_value")
 
+    def test_update_many(self):
+        self.blackboard.update_many({"a": 1, "b": 2})
+        self.assertEqual(self.blackboard.snapshot(["a", "b"]), {"a": 1, "b": 2})
+
+    def test_snapshot_is_independent(self):
+        self.blackboard.set("nested", {"value": 1})
+        snapshot = self.blackboard.snapshot()
+        snapshot["nested"]["value"] = 99
+        self.assertEqual(self.blackboard.get("nested"), {"value": 1})
+
 if __name__ == "__main__":
     unittest.main()

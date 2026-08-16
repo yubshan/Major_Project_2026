@@ -7,21 +7,21 @@ This is a draft to discuss with the team. Do not treat it as final until navigat
 | Key | Owner | Required fields | Notes |
 |---|---|---|---|
 | `mission/control` | Simulator/dashboard/operator | `mode`, `emergency_stop`, `timestamp_ms` | `mode` can be `idle`, `run`, `pause`, `return`, `stop`. |
-| `robot/pose` | Navigation/simulation | `x`, `y`, `theta_deg`, `timestamp_ms` | Coordinates must follow root README convention. |
-| `map/occupancy_grid` | Navigation | 50 x 50 grid | Suggested encoding: unknown `-1`, free `0`, occupied `1`, hazard `2`. |
-| `navigation/path` | Navigation | `points`, `status`, `timestamp_ms` | `status` can be `none`, `planning`, `ready`, `blocked`, `reached`. |
-| `navigation/frontier` | Navigation | `target_x`, `target_y`, `score`, `timestamp_ms` | Used for exploration baseline. |
-| `sensors/proximity` | Navigation/simulation | `front_cm`, `left_cm`, `right_cm`, `timestamp_ms` | Decision logic only needs processed proximity, not raw sensor rays. |
+| `navigation/robot_pose` | Navigation/simulation | `x`, `y`, `heading`, `timestamp_ms` | Centimetres and degrees; follows root convention. |
+| `navigation/occupancy_grid` | Navigation | NumPy array shaped `(50, 50)` | Unknown `2`, free `0`, occupied `1`. |
+| `navigation/planned_path` | Navigation | List of `(row, col)` cells | Empty until path planning is implemented. |
+| `navigation/target_waypoint` | Decision logic | `(row, col)` or `None` | Temporary integration key consumed by navigation. |
+| `sensor/proximity` | Navigation/simulation | Five `us_*` fields plus `timestamp_ms` | Distances are centimetres; `0` means unavailable. |
 | `detection/result` | WiFi detection | `human_x`, `human_y`, `confidence`, `timestamp_ms` | Confidence should be from `0.0` to `1.0`. |
 
 ## Outputs Written By Decision Logic
 
 | Key | Consumer | Required fields | Notes |
 |---|---|---|---|
-| `state/motor_command` | Simulator/hardware motor layer | `left_speed`, `right_speed`, `duration_ms`, `reason`, `timestamp_ms` | Speed range should be agreed, suggested `-100` to `100`. |
-| `decision/state` | Dashboard/logs | `mission_state`, `active_behavior`, `last_transition`, `timestamp_ms` | Used for visualization and debugging. |
-| `decision/target` | Navigation | `x`, `y`, `target_type`, `priority`, `timestamp_ms` | `target_type` can be `victim`, `frontier`, `return_home`. |
-| `decision/trace` | Dashboard/logs | `tick_id`, `selected_action`, `reason`, `source_layer`, `timestamp_ms` | Can be latest trace entry or a bounded recent list. |
+| `state/motor_command` | Simulator/hardware motor layer | `left_speed`, `right_speed`, `duration_ms` | Speeds are clamped to `[-255, 255]`; duration to `[0, 1000]` ms. |
+| `state/bt_status` | Dashboard/logs | String | Concise status for display. |
+| `decision/state` | Dashboard/logs | `mission_state`, `active_behavior`, `status`, `timestamp_ms` | Latest decision state. |
+| `decision/trace` | Dashboard/logs | `tick_id`, `selected_action`, `reason`, `source_layer`, `status`, `command`, `timestamp_ms` | Latest structured explanation. |
 | `detection/confirm_request` | WiFi detection/simulation | `target_x`, `target_y`, `required_confidence`, `timestamp_ms` | Optional, used when confirmation behavior exists. |
 
 ## Example Input Payloads
@@ -36,7 +36,7 @@ mission_control = {
 robot_pose = {
     "x": 12.0,
     "y": 8.0,
-    "theta_deg": 90.0,
+    "heading": 90.0,
     "timestamp_ms": 1780000000000,
 }
 
@@ -48,9 +48,11 @@ detection_result = {
 }
 
 proximity = {
-    "front_cm": 42.0,
-    "left_cm": 55.0,
-    "right_cm": 31.0,
+    "us_front": 42.0,
+    "us_left45": 55.0,
+    "us_left90": 60.0,
+    "us_right45": 31.0,
+    "us_right90": 48.0,
     "timestamp_ms": 1780000000000,
 }
 ```
@@ -62,22 +64,12 @@ motor_command = {
     "left_speed": 0,
     "right_speed": 0,
     "duration_ms": 100,
-    "reason": "emergency_stop_requested",
-    "timestamp_ms": 1780000000100,
 }
 
 decision_state = {
     "mission_state": "stopped",
     "active_behavior": "EmergencyStopSequence",
-    "last_transition": "searching -> stopped",
-    "timestamp_ms": 1780000000100,
-}
-
-decision_target = {
-    "x": 20.0,
-    "y": 14.0,
-    "target_type": "victim",
-    "priority": 100,
+    "status": "EMERGENCY_STOP [operator]",
     "timestamp_ms": 1780000000100,
 }
 
@@ -86,6 +78,8 @@ decision_trace = {
     "selected_action": "SetVictimTarget",
     "reason": "detection_confidence_0.82_above_threshold_0.75",
     "source_layer": "BT_MISSION",
+    "status": "VICTIM_CONFIRMED",
+    "command": motor_command,
     "timestamp_ms": 1780000000100,
 }
 ```
@@ -98,4 +92,3 @@ decision_trace = {
 - Obstacle safety must override victim navigation and exploration.
 - RL output must be supervised by Behavior Tree safety.
 - Every motor command should include a reason.
-

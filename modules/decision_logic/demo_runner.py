@@ -30,6 +30,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 from shared.blackboard       import Blackboard
 from modules.decision_logic.demo_data import get_mock_detection, get_mock_nav_state
 from modules.decision_logic.brain import Brain
+from modules.decision_logic.contracts import MISSION_CONTROL, PROXIMITY, ROBOT_POSE, now_ms
 
 # ── ANSI colour helpers ────────────────────────────────────────────────────────
 RED     = "\033[91m"
@@ -101,6 +102,22 @@ def _load_scenario(bb: Blackboard, nav_sc: str, det_sc: str):
     bb.set("navigation/target_waypoint", nav["target_waypoint"])
     bb.set("sensor/proximity",           nav["proximity"])
     bb.set("detection/result",           det)
+    bb.set(MISSION_CONTROL, {
+        "mode": "idle" if nav_sc == "start" else "run",
+        "emergency_stop": False,
+        "timestamp_ms": now_ms(),
+    })
+
+
+def _refresh_runtime_state(bb: Blackboard):
+    """Emulate live navigation/sensor publishers during the terminal demo."""
+    timestamp_ms = now_ms()
+    pose = dict(bb.get(ROBOT_POSE, {}))
+    proximity = dict(bb.get(PROXIMITY, {}))
+    pose["timestamp_ms"] = timestamp_ms
+    proximity["timestamp_ms"] = timestamp_ms
+    bb.set(ROBOT_POSE, pose)
+    bb.set(PROXIMITY, proximity)
 
 
 def _header():
@@ -141,6 +158,7 @@ def main():
             tick  = 0
 
             while time.time() < t_end:
+                _refresh_runtime_state(bb)
                 time.sleep(0.1)
                 tick += 1
 

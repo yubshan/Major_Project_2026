@@ -17,14 +17,10 @@
 
 import py_trees
 
+from modules.decision_logic.contracts import PROXIMITY, PROXIMITY_FIELDS
+from modules.decision_logic.decision_output import STOP_COMMAND, publish_decision
+
 DANGER_CM = 15   # Emergency threshold in centimetres
-
-STOP_COMMAND = {
-    "left_speed":  0,
-    "right_speed": 0,
-    "duration_ms": 0,
-}
-
 
 class EmergencyStop(py_trees.behaviour.Behaviour):
     """
@@ -37,18 +33,25 @@ class EmergencyStop(py_trees.behaviour.Behaviour):
         self.bb = blackboard
 
     def update(self) -> py_trees.common.Status:
-        proximity = self.bb.get("sensor/proximity")
+        proximity = self.bb.get(PROXIMITY)
 
         if proximity is None:
             # No sensor data yet — assume safe, let other nodes decide
             return py_trees.common.Status.FAILURE
 
         # Check all 5 ultrasonic directions
-        for direction, distance_cm in proximity.items():
+        for direction in PROXIMITY_FIELDS:
+            distance_cm = proximity[direction]
             if distance_cm > 0 and distance_cm < DANGER_CM:
-                # DANGER — write stop command and block further execution
-                self.bb.set("state/motor_command", STOP_COMMAND)
-                self.bb.set("state/bt_status", f"EMERGENCY_STOP [{direction}: {distance_cm}cm]")
+                status = f"EMERGENCY_STOP [{direction}: {distance_cm}cm]"
+                publish_decision(
+                    self.bb,
+                    behavior=self.name,
+                    status=status,
+                    reason=f"{direction}={distance_cm}cm_below_{DANGER_CM}cm",
+                    source_layer="BT_SAFETY",
+                    command=STOP_COMMAND,
+                )
                 self.feedback_message = f"BLOCKED: {direction} = {distance_cm}cm"
                 return py_trees.common.Status.SUCCESS
 

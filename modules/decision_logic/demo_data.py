@@ -1,9 +1,8 @@
 """Deterministic demo fixtures for the decision-logic module."""
 
-import time
-
 import numpy as np
 
+from modules.decision_logic.contracts import now_ms
 from shared.coordinate_system import (
     FREE,
     GRID_CENTER_X,
@@ -17,7 +16,7 @@ from shared.coordinate_system import (
 
 def get_mock_detection(scenario: str) -> dict:
     """Return a detection packet for a named demo scenario."""
-    timestamp = int(time.time() * 1000)
+    timestamp = now_ms()
     scenarios = {
         "no_human": (0.0, 0.0, 0.08),
         "weak_signal": (80.0, 30.0, 0.52),
@@ -34,7 +33,7 @@ def get_mock_detection(scenario: str) -> dict:
         "human_x": human_x,
         "human_y": human_y,
         "confidence": confidence,
-        "timestamp": timestamp,
+        "timestamp_ms": timestamp,
     }
 
 
@@ -68,43 +67,54 @@ def _proximity(front: int, left45: int, left90: int, right45: int, right90: int)
 
 def get_mock_nav_state(scenario: str) -> dict:
     """Return navigation state for a named demo scenario."""
+    timestamp = now_ms()
     scenarios = {
         "start": {
-            "robot_pose": {"x": 0.0, "y": 0.0, "heading": 0.0},
+            "robot_pose": {
+                "x": 0.0, "y": 0.0, "heading": 0.0, "timestamp_ms": timestamp
+            },
             "occupancy_grid": _grid(),
             "planned_path": [],
             "target_waypoint": None,
-            "proximity": _proximity(120, 100, 90, 110, 95),
+            "proximity": {**_proximity(120, 100, 90, 110, 95), "timestamp_ms": timestamp},
         },
         "exploring": {
-            "robot_pose": {"x": 30.0, "y": 10.0, "heading": 45.0},
+            "robot_pose": {
+                "x": 30.0, "y": 10.0, "heading": 45.0, "timestamp_ms": timestamp
+            },
             "occupancy_grid": _grid(0.4),
             "planned_path": [],
             "target_waypoint": None,
-            "proximity": _proximity(80, 70, 60, 85, 90),
+            "proximity": {**_proximity(80, 70, 60, 85, 90), "timestamp_ms": timestamp},
         },
         "obstacle_ahead": {
-            "robot_pose": {"x": 20.0, "y": 0.0, "heading": 0.0},
+            "robot_pose": {
+                "x": 20.0, "y": 0.0, "heading": 0.0, "timestamp_ms": timestamp
+            },
             "occupancy_grid": _grid(0.3),
             "planned_path": [],
             "target_waypoint": None,
-            "proximity": _proximity(12, 30, 60, 25, 55),
+            "proximity": {**_proximity(12, 30, 60, 25, 55), "timestamp_ms": timestamp},
         },
         "target_locked": {
-            "robot_pose": {"x": 0.0, "y": 0.0, "heading": 30.0},
+            "robot_pose": {
+                "x": 0.0, "y": 0.0, "heading": 30.0, "timestamp_ms": timestamp
+            },
             "occupancy_grid": _grid(0.5),
             "planned_path": [
                 (GRID_CENTER_Y - step, GRID_CENTER_X + step) for step in range(6)
             ],
             "target_waypoint": (GRID_CENTER_Y - 5, GRID_CENTER_X + 8),
-            "proximity": _proximity(90, 80, 70, 85, 75),
+            "proximity": {**_proximity(90, 80, 70, 85, 75), "timestamp_ms": timestamp},
         },
         "near_victim": {
-            "robot_pose": {"x": 110.0, "y": -35.0, "heading": 315.0},
+            "robot_pose": {
+                "x": 110.0, "y": -35.0, "heading": 315.0, "timestamp_ms": timestamp
+            },
             "occupancy_grid": _grid(0.6),
             "planned_path": [],
             "target_waypoint": None,
-            "proximity": _proximity(55, 50, 45, 60, 65),
+            "proximity": {**_proximity(55, 50, 45, 60, 65), "timestamp_ms": timestamp},
         },
     }
     try:
