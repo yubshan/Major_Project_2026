@@ -1,0 +1,1473 @@
+TRIBHUVAN UNIVERSITY
+INSTITUTE OF ENGINEERING
+PURWANCHAL CAMPUS, DHARAN-8
+
+DEPARTMENT OF ELECTRONICS AND COMPUTER ENGINEERING
+
+
+MID-TERM PROJECT REPORT
+
+ON
+
+HYBRID EXPLAINABLE DECISION-MAKING FRAMEWORK
+FOR AN AUTONOMOUS SEARCH-AND-RESCUE ROBOT IN
+MULTI-HAZARD DISASTER ENVIRONMENTS
+
+(PROJECT DRISHYA)
+
+
+Submitted by:
+Anusha Shrestha   (PUR079BEI008)
+Ditish Acharya    (PUR079BEI017)
+Suwarna Pyakurel  (PUR079BEI043)
+Yubshan Shrestha  (PUR079BEI048)
+
+Project Supervisor: TBD
+Program: Bachelor of Engineering in Electronics, Communication and Information
+Submission Date: TBD
+
+
+DOCUMENT STATUS
+
+This report records the state of Project Drishya at the mid-term repository audit cutoff of
+17 August 2026. Statements under "completed" are limited to artifacts that can be demonstrated
+from the project repository. Simulated inputs, mock detections, prototypes, training scaffolds,
+and future work are identified explicitly. Replace all square-bracket placeholders before formal
+submission and update the cutoff date if additional work is completed.
+
+
+===============================================================================
+ABSTRACT
+===============================================================================
+
+Search-and-rescue operations in collapsed or otherwise hazardous environments are time-critical,
+uncertain, and dangerous for human responders. Project Drishya investigates a modular autonomous
+ground-robot framework intended to map an unknown environment, detect possible victims, navigate
+toward confirmed targets, enforce deterministic safety rules, and explain each selected action.
+The project proposal introduced a layered hybrid architecture combining Behavior Trees (BT),
+Reinforcement Learning (RL), Genetic Algorithms (GA), and an optional Game Theory layer. During
+the first development phase, the project scope was refined into four practical modules connected
+through a shared thread-safe Blackboard: WiFi Channel State Information (CSI)-based human
+detection, navigation and occupancy mapping, explainable decision logic, and simulation and
+visualization. The use of WiFi CSI extends the original perception plan by targeting contactless,
+non-line-of-sight human-presence sensing, while the original multi-hazard and explainable-control
+objectives remain the long-term system context.
+
+At the mid-term cutoff, the verified implementation includes a common 50 x 50 coordinate system,
+sensor-packet validation, thread-safe shared state, mock sensor and detection generators, Bresenham
+ray casting, ultrasonic and 8 x 8 Time-of-Flight (ToF) conversion, occupancy-grid updates, a
+Gymnasium-compatible exploration environment, a six-stage priority Behavior Tree, bounded motor
+commands, structured decision traces, and a headless navigation-decision integration harness.
+The Behavior Tree provides fail-safe mission and data validation, proximity-based emergency stop,
+confidence-gated victim confirmation, waypoint-directed steering, exploration using either a PPO
+policy or deterministic heuristic fallback, and an idle state. A total of 97 automated tests pass
+in the audited development environment: 56 tests for shared navigation/mapping functionality and
+41 tests for decision nodes, tree priority, safety behavior, and the RL environment. The integration
+harness also demonstrates idle, exploration, emergency-stop, and victim-navigation scenarios.
+
+The present results prove modular software behavior under deterministic mock inputs; they do not
+yet demonstrate rescue success rate, trained-policy superiority, WiFi CSI detection accuracy,
+multi-hazard robustness, or hardware performance. No trained PPO checkpoint, GA optimizer,
+integrated CSI pipeline, complete A* planner, complete four-panel simulator, ESP32 firmware, or
+hardware-in-the-loop experiment is present in the audited repository. Accordingly, proposal values
+such as 91.8% rescue success, 98.2-second execution time, Raspberry Pi operation at 42 Hz, and
+ESP32 sensing at 100 Hz are treated as unverified targets and are not reported as mid-term results.
+
+The next phase will focus on contract consolidation, closed-loop simulation, real WiFi CSI data
+collection and baseline modeling, path planning, reproducible PPO-versus-heuristic experiments,
+multi-hazard scenario design, hardware integration, and metric-based evaluation. The mid-term
+outcome is therefore a tested and explainable software foundation, not a completed autonomous
+rescue robot.
+
+Keywords: Search and Rescue Robot, Behavior Tree, Explainable AI, Reinforcement Learning,
+WiFi CSI, Occupancy Grid, Sensor Fusion, Autonomous Navigation, Disaster Robotics.
+
+
+===============================================================================
+TABLE OF CONTENTS
+===============================================================================
+
+Abstract
+List of Abbreviations
+1. Introduction
+2. Literature Review and Technical Basis
+3. Requirements, Scope, and System Architecture
+4. Methodology
+5. Mid-Term Implementation
+6. Verification, Results, and Discussion
+7. Gap Analysis, Limitations, and Risk Management
+8. Remaining Work Plan
+9. Expected Final Evaluation
+10. Conclusion
+References
+Appendix A: Repository Evidence Matrix
+Appendix B: Mid-Term Defense Plan
+Appendix C: Likely Viva Questions and Model Answers
+Appendix D: Finalization Checklist and Questions for the Team
+
+
+===============================================================================
+LIST OF ABBREVIATIONS
+===============================================================================
+
+A*       A-star Pathfinding Algorithm
+AI       Artificial Intelligence
+API      Application Programming Interface
+BT       Behavior Tree
+CNN      Convolutional Neural Network
+CSI      Channel State Information
+CSV      Comma-Separated Values
+DEAP     Distributed Evolutionary Algorithms in Python
+ESP32    Espressif 32-bit Microcontroller Platform
+GA       Genetic Algorithm
+GT       Game Theory
+HIL      Hardware-in-the-Loop
+IR       Infrared
+LoS      Line of Sight
+NLoS     Non-Line of Sight
+PPO      Proximal Policy Optimization
+PWM      Pulse-Width Modulation
+RL       Reinforcement Learning
+RSSI     Received Signal Strength Indicator
+SAR      Search and Rescue
+ToF      Time of Flight
+XAI      Explainable Artificial Intelligence
+
+
+===============================================================================
+1. INTRODUCTION
+===============================================================================
+
+1.1 Background
+
+Disaster sites such as collapsed buildings expose rescuers to unstable structures, poor visibility,
+toxic substances, fire, and constrained passages. Search speed matters, but unverified autonomy can
+introduce new risk. A rescue robot must therefore combine perception, mapping, navigation, safety,
+and understandable decision-making rather than optimize only one task.
+
+Conventional cameras depend on visibility, while infrared sensing may be limited by occlusion and
+thermal conditions. WiFi CSI provides fine-grained information about how individual wireless
+subcarriers are affected by multipath propagation, attenuation, and movement. Research has shown
+that CSI can support device-free human sensing, including difficult non-line-of-sight settings,
+although performance is strongly affected by wall material, geometry, interference, device
+placement, and environmental change [7-9]. Consequently, WiFi CSI is treated in this project as a
+promising perception modality requiring controlled experimental validation, not as guaranteed
+"vision through concrete."
+
+The decision problem is similarly complex. Purely rule-based control is understandable and can
+enforce safety, but may be inflexible in unseen situations. A learned policy may adapt through
+experience, but can be difficult to audit and cannot be allowed to bypass emergency constraints.
+Project Drishya addresses this tension through a layered approach: deterministic Behavior Tree
+branches own safety and mission priority; a learned or heuristic policy proposes exploration
+actions; and every final decision is recorded in a structured trace.
+
+1.2 Problem Statement
+
+The engineering problem is to develop an affordable autonomous SAR robot that can incrementally
+perceive an unknown environment, locate a possible trapped person without relying solely on direct
+visibility, move toward valid targets without collision, and expose a human-readable and
+machine-readable reason for each selected action. The system must continue to fail safely when
+sensor data are absent, malformed, stale, or contradictory.
+
+The current project is not yet a field-ready rescue system. The mid-term problem is narrower and
+measurable: establish reliable software contracts and demonstrate that mapping and decision modules
+behave correctly under controlled simulated inputs, while preparing the experimental path toward
+closed-loop simulation and hardware.
+
+1.3 Motivation
+
+The project is motivated by three needs:
+
+1. Responder safety: remote sensing and mapping may reduce unnecessary exposure of rescuers.
+2. Search efficiency: autonomous exploration and non-visual human sensing may help prioritize
+   areas for investigation.
+3. Trust and auditability: rescue personnel need to know whether a stop or movement originated
+   from operator control, a safety rule, a confirmed target, a learned policy, or a fallback.
+
+1.4 Original Objectives from the Proposal
+
+The proposal specified the following objectives:
+
+1. Design a modular grid-based multi-hazard simulation and an affordable Raspberry Pi/ESP32 robot.
+2. Integrate Behavior Trees for deterministic safety, RL for adaptive navigation, and GA for
+   strategy optimization.
+3. Develop an explainability module that maps actions to architectural layers in real time.
+
+The optional Game Theory layer was reserved for multi-robot coordination, whereas the formal scope
+centered on a single robot.
+
+1.5 Refined Mid-Term Objectives
+
+To make progress demonstrable and testable, the first phase is evaluated using these objectives:
+
+1. Define shared spatial, sensor, state, and motor-command contracts.
+2. Convert ultrasonic and ToF observations into an incremental occupancy grid.
+3. Build deterministic safety and mission control using a priority Behavior Tree.
+4. Provide a Gymnasium exploration environment and PPO training path without making RL responsible
+   for safety.
+5. Produce structured decision traces containing the selected action, reason, source layer,
+   status, command, timestamp, and tick identifier.
+6. Demonstrate navigation-decision integration using repeatable mock scenarios.
+7. Preserve clear interfaces for WiFi detection, visualization, and eventual hardware publishers.
+
+1.6 Scope
+
+Included in the current software scope:
+
+- One mobile robot in a 5 m x 5 m logical workspace represented by 50 x 50 cells.
+- Incremental unknown/free/occupied mapping from five ultrasonic channels and an 8 x 8 ToF grid.
+- Shared Blackboard communication.
+- Behavior Tree safety, target confirmation, simple waypoint steering, exploration, and idle logic.
+- Structured action explanations and deterministic integration scenarios.
+- A custom RL environment and PPO training scaffold.
+- Early isometric rendering and sensor-simulation prototypes.
+
+Not yet included as verified mid-term functionality:
+
+- Real CSI acquisition, preprocessing, trained CNN, localization, or accuracy results.
+- A complete A* planner, frontier planner, or closed-loop navigation controller.
+- Integrated fire, flood, chemical-leak, and collapse dynamics.
+- GA optimization or comparative optimization results.
+- Multi-robot coordination or Game Theory.
+- Complete dashboard and live inter-module simulator.
+- Motor/sensor firmware, physical robot, or HIL validation.
+- Field rescue certification or safety guarantee.
+
+1.7 Main Mid-Term Contribution
+
+The main contribution at this stage is an evidence-backed, modular, and testable autonomy core. It
+separates safety decisions from adaptive exploration and standardizes how independent team modules
+exchange data. This foundation lowers integration risk and gives the final project measurable points
+for later comparison.
+
+
+===============================================================================
+2. LITERATURE REVIEW AND TECHNICAL BASIS
+===============================================================================
+
+2.1 Behavior Trees for Robotic Control
+
+Behavior Trees organize control logic hierarchically and support modular, reactive task execution.
+A priority selector can evaluate high-priority branches before lower-priority behavior and interrupt
+lower branches when a safety condition becomes active. Literature identifies modularity,
+reactivity, readability, and reuse as important reasons for their growing use in robotics [1,2].
+
+Project Drishya uses a memoryless selector. On every tick it evaluates mission/data validity first,
+then proximity safety, victim confirmation, target navigation, exploration, and idle fallback. This
+ordering is central to the safety argument: a PPO action is not directly sent to motors without the
+Behavior Tree being reevaluated at the next control tick. However, this is a software safety pattern,
+not a formal proof of physical safety; real braking distance, communication delay, actuator failure,
+and sensor uncertainty must still be evaluated.
+
+2.2 Reinforcement Learning and PPO
+
+RL learns a policy by maximizing expected cumulative reward through interaction with an
+environment. PPO uses a clipped policy-update objective to limit overly large policy changes and is
+widely used as a practical policy-gradient method [3]. The project defines a Gymnasium environment
+with a 2,503-element observation (2,500 normalized occupancy values, normalized row and column,
+and normalized victim distance), four discrete movement actions, rewards for exploration and victim
+proximity, and penalties for collision and time.
+
+This environment is currently a training scaffold. A meaningful final experiment must validate the
+environment, control random seeds, train several independent runs, preserve checkpoints and logs,
+compare against a deterministic heuristic, and report confidence intervals rather than a single best
+episode. It must also avoid information leakage: the runtime robot cannot observe true victim
+distance unless a real detection subsystem supplies an equivalent estimate.
+
+2.3 Genetic Algorithms
+
+GA methods are population-based search techniques suitable for non-differentiable, multi-parameter
+optimization. The proposal assigns GA to high-level strategy or reward-weight optimization. That
+layer is architecturally plausible but absent at mid-term. It should only be introduced after a
+stable simulator and repeatable baseline exist; otherwise the optimizer would tune against a moving
+implementation and produce results that cannot be interpreted.
+
+2.4 Explainability
+
+Explainability in this project is operational rather than purely visual. Each final command is
+published with:
+
+- tick identifier;
+- selected behavior;
+- human-readable reason;
+- source layer (for example BT_SAFETY, BT_MISSION, RL_POLICY, or HEURISTIC_EXPLORATION);
+- status;
+- sanitized motor command; and
+- timestamp.
+
+This trace answers "which layer acted and why?" It does not fully explain the internal causal basis
+of a neural policy. When PPO is integrated, the project should add policy confidence or action
+distribution, observation snapshot/hash, model version, and safety-override events. The report
+therefore distinguishes decision provenance from complete model interpretability.
+
+2.5 Occupancy-Grid Mapping and Ray Casting
+
+The project represents the map using FREE=0, OCCUPIED=1, and UNKNOWN=2. Sensor endpoints are
+converted from robot-relative distance and angle into grid coordinates. Bresenham's integer line
+algorithm enumerates cells along each sensor ray [11]. Cells before a valid detected endpoint are
+marked free, while the endpoint is marked occupied. This is computationally simple and appropriate
+for a first deterministic mapper.
+
+The present map is categorical, not probabilistic. It does not model sensor likelihood, confidence,
+false returns, pose uncertainty, temporal decay, or dynamic hazards. A log-odds occupancy update or
+similar evidence-fusion method is recommended for the final system.
+
+2.6 WiFi CSI Human Sensing
+
+CSI captures per-subcarrier channel response information and is richer than a single RSSI value.
+Espressif provides ESP32 CSI acquisition APIs and callback mechanisms [7]. Peer-reviewed work has
+demonstrated feasibility for through-wall presence or activity sensing [8,9], but also documents
+attenuation, multipath, environmental sensitivity, and domain generalization problems. Therefore,
+the project must collect its own labeled data across people, locations, wall types, distances, and
+days. Claims about victim detection must report both sensitivity and false-alarm behavior and must
+use person-independent and environment-aware train/test splits.
+
+2.7 A* and Frontier Exploration
+
+A* searches for a least-cost path using accumulated path cost plus a heuristic estimate [10].
+Frontier exploration selects boundaries between known free space and unknown space. Both are named
+in the project architecture but are not implemented as complete navigation modules in the audited
+repository. The current target behavior performs direct heading-based steering and the fallback
+explorer counts unknown cells in short directional windows. These are useful baselines, not
+substitutes for collision-aware global planning.
+
+2.8 Related Mobile-Robot Navigation Work
+
+Shrestha et al. reported mobile-robot navigation using ROS 2 Nav2, SLAM, and LiDAR [12]. This work
+is especially relevant as a recent IEEE-published mobile-robot study involving authors from
+Purwanchal Campus. It provides a useful local reference for integrating mapping, localization, and
+navigation into a physical platform. Project Drishya differs in its present sensing and research
+emphasis: it currently develops a lightweight ultrasonic/ToF occupancy mapper, WiFi CSI victim
+perception, and an explainable BT/RL decision layer rather than a LiDAR-centered ROS 2 navigation
+stack. The paper therefore informs the project's integration and hardware-validation approach
+without being presented as evidence that Drishya itself has implemented Nav2, LiDAR, or SLAM.
+
+2.9 Identified Research and Engineering Gap
+
+Existing techniques individually address safety logic, adaptive exploration, mapping, or wireless
+sensing. The project opportunity is their disciplined integration in an affordable platform with a
+clear command provenance trail. The contribution should not be framed as inventing BT, PPO, GA, or
+CSI. It should be framed as designing and evaluating a modular hybrid framework in which learned
+adaptation remains subordinate to explicit safety and every control decision is auditable.
+
+
+===============================================================================
+3. REQUIREMENTS, SCOPE, AND SYSTEM ARCHITECTURE
+===============================================================================
+
+3.1 Functional Requirements
+
+FR-01  The system shall accept validated ultrasonic and ToF sensor packets.
+FR-02  The system shall maintain a shared coordinate convention across modules.
+FR-03  The system shall incrementally classify grid cells as unknown, free, or occupied.
+FR-04  The system shall publish state through a synchronized Blackboard.
+FR-05  The decision layer shall stop when mission control or critical state is invalid/stale.
+FR-06  The decision layer shall stop when a valid proximity reading is below 15 cm.
+FR-07  A fresh detection at or above 0.85 confidence shall generate a bounded map waypoint.
+FR-08  An active waypoint shall trigger navigation behavior until arrival.
+FR-09  In the absence of danger and a target, the robot shall select an exploration action.
+FR-10  The final command shall be bounded to the agreed motor envelope.
+FR-11  Every published decision shall include an explanation trace.
+FR-12  The simulator and later hardware shall use equivalent external packet contracts.
+
+3.2 Non-Functional Requirements
+
+NFR-01 Safety: deterministic stop conditions shall precede learning-based behavior.
+NFR-02 Modularity: modules shall communicate through shared contracts, not private internals.
+NFR-03 Testability: critical conversions, map updates, and tree nodes shall have automated tests.
+NFR-04 Reproducibility: simulation scenarios and future ML experiments shall use recorded configs
+       and random seeds.
+NFR-05 Explainability: decision provenance shall be readable by a reviewer and parsable by software.
+NFR-06 Timing: the decision loop targets 10 Hz in software; hardware timing remains to be measured.
+NFR-07 Portability: the software shall run first on a development computer and later on Raspberry Pi.
+NFR-08 Maintainability: constants and Blackboard keys shall be centralized and documented.
+
+3.3 Logical Architecture
+
+  Simulation sensors / ESP32 sensors             WiFi CSI detector
+                 |                                      |
+                 v                                      v
+       Sensor validation and queue              detection/result
+                 |                                      |
+                 v                                      |
+       Navigation and occupancy mapping                 |
+                 |                                      |
+                 +------------------+-------------------+
+                                    v
+                           THREAD-SAFE BLACKBOARD
+                                    |
+                                    v
+                  BEHAVIOR TREE / DECISION PROVENANCE
+                    1. SafetyGate
+                    2. EmergencyStop
+                    3. VictimConfirmation
+                    4. NavigateToTarget
+                    5. RLExplore or heuristic
+                    6. Idle
+                                    |
+                       +------------+------------+
+                       v                         v
+                motor command             decision trace
+                       |                         |
+              simulator / ESP32           dashboard / log
+
+3.4 Coordinate System
+
+- Physical origin: robot starting point (0 cm, 0 cm).
+- Initial heading: 0 degrees along positive X.
+- Positive Y: robot's left at the initial frame.
+- Cell size: 10 cm.
+- Grid dimensions: 50 rows x 50 columns.
+- Physical origin maps to logical cell (row 25, column 25).
+- world_to_grid: column = round(x/10)+25; row = round(-y/10)+25.
+- grid_to_world applies the inverse convention at cell centers.
+
+This convention must be displayed during the defense because row/column and X/Y confusion is a
+common integration failure.
+
+3.5 Sensor Packet Contract
+
+Required fields are five non-negative integer ultrasonic distances (front, left 45 degrees, left
+90 degrees, right 45 degrees, right 90 degrees), an 8 x 8 list of non-negative integer ToF values,
+and a non-negative integer timestamp. A distance of zero represents unavailable/invalid data and is
+ignored by mapping.
+
+The final contract should add units, maximum range, no-return semantics, sensor identifier,
+sequence number, schema version, timestamp clock definition, and checksum or transport validation.
+
+3.6 Blackboard Contract
+
+Important inputs include mission/control, navigation/robot_pose,
+navigation/occupancy_grid, navigation/target_waypoint, sensor/proximity, and detection/result.
+Important outputs include state/motor_command, state/bt_status, decision/state, and decision/trace.
+
+Atomic update_many() and consistent deep-copy snapshots are available. Individual get() operations
+return stored references, so callers must avoid mutating shared arrays or dictionaries outside the
+lock. A final hardened version should either return immutable/copy-on-read payloads or formally
+document ownership.
+
+3.7 Behavior Tree Priority
+
+SafetyGate -> EmergencyStop -> VictimConfirmation -> NavigateToTarget -> RLExplore -> Idle
+
+The root is a memoryless Selector. A child that succeeds or is running prevents lower-priority
+children from executing during that tick. The tree is evaluated at a nominal 10 Hz by Brain.
+
+
+===============================================================================
+4. METHODOLOGY
+===============================================================================
+
+4.1 Development Strategy
+
+The project follows simulation-first, contract-first, and modular development. Teams can build
+against deterministic mock publishers before live modules are ready. Unit tests establish local
+correctness, followed by headless cross-module scenarios. Closed-loop simulation and hardware are
+subsequent integration stages.
+
+4.2 Mapping Pipeline
+
+1. Validate the sensor packet at the input boundary.
+2. Read the robot pose and heading.
+3. Convert each ultrasonic sensor direction into a global angle.
+4. Convert the endpoint from centimeters to a grid cell.
+5. Generate cells from robot to endpoint using Bresenham ray casting.
+6. Mark intermediate valid cells free and a valid endpoint occupied.
+7. Repeat for every cell in the 8 x 8 ToF array using the ToF projection function.
+8. Publish a copy of the occupancy grid.
+
+At mid-term, update_map() assumes it receives structurally valid input; the integration boundary
+must explicitly call validation in the final runtime path.
+
+4.3 Decision Pipeline
+
+1. Publish mission, pose, map, proximity, and detection state.
+2. Increment the decision tick identifier.
+3. Reject missing, malformed, stale, unavailable, or paused state through SafetyGate.
+4. Stop if any available proximity sensor is below 15 cm.
+5. Confirm only a fresh detection with confidence >= 0.85 and valid in-map coordinates.
+6. If a waypoint exists, compute target heading and issue bounded differential motor values.
+7. Otherwise use PPO if a checkpoint loads; if it does not, use the deterministic heuristic.
+8. If the map is fully explored or no action is possible, enter Idle.
+9. Atomically publish command, state, status, and trace.
+
+4.4 RL Environment
+
+Each episode creates a 50 x 50 ground-truth grid with approximately 8% obstacle density, places the
+robot at the center, and places a victim in a free cell away from the start. The action space is
+forward, left, backward, or right. A local square region with range five cells is revealed around
+the robot. The reward is:
+
+R_t = newly_explored_cells(1.0) - 0.05 per step - 5.0 per collision
+      + 50.0 when the robot comes within three Manhattan cells of the victim.
+
+Episodes terminate on victim discovery and truncate at 500 steps. The training script configures
+PPO with four vectorized environments. These design choices require later ablation and leakage
+review; they are not validated hyperparameters at mid-term.
+
+4.5 Proposed CSI Method for the Next Phase
+
+1. Fix transmitter, receiver, channel, bandwidth, antenna arrangement, and packet rate.
+2. Record raw complex CSI with synchronized labels and metadata.
+3. Remove invalid subcarriers/packets and correct phase artifacts where appropriate.
+4. Form amplitude and/or calibrated phase windows.
+5. Split data by person, session, and environment before model fitting.
+6. Begin with non-neural baselines; then compare a compact CNN or temporal model.
+7. Calibrate probabilities and choose the confirmation threshold using validation data.
+8. Report confusion matrix, precision, recall, F1, ROC/PR behavior, false alarms per minute, and
+   inference latency.
+9. Only attempt localization after stable presence detection is demonstrated.
+
+4.6 Evaluation Philosophy
+
+The final evaluation must compare ablations:
+
+- deterministic baseline only;
+- BT + heuristic exploration;
+- BT + PPO;
+- BT + PPO + GA-tuned parameters, if GA remains in scope;
+- safety layer disabled only in simulation to quantify its effect;
+- known versus unseen layouts, hazard configurations, and CSI environments.
+
+Each result must state sample count, seed policy, mean, dispersion, failure cases, and hardware or
+simulation context.
+
+
+===============================================================================
+5. MID-TERM IMPLEMENTATION
+===============================================================================
+
+5.1 Shared Infrastructure - Implemented and Tested
+
+- A 50 x 50 coordinate system with 10 cm resolution.
+- Bidirectional world/grid conversion.
+- Required sensor schema and validation rules.
+- A lock-protected Blackboard with set, get, atomic multi-update, and snapshot.
+- A thread-safe sensor queue.
+- Deterministic mock sensor, detection, and navigation scenarios.
+- A shared Bresenham ray-casting implementation.
+
+5.2 Navigation and Mapping - Partially Implemented and Tested
+
+Implemented:
+
+- OccupancyGrid creation, bounds checks, cell validation, and ray updates.
+- Robot-relative sensor-to-grid transformation.
+- ToF cell projection.
+- Five-direction ultrasonic map updates.
+- 8 x 8 ToF map updates.
+- Combined sensor-based occupancy update.
+- Tests for normal, rotated, boundary, invalid-distance, and multi-sensor cases.
+
+Pending:
+
+- Runtime navigator loop and live queue consumption.
+- Complete A* pathfinding.
+- Complete frontier selection.
+- Dynamic replanning and hazard-aware path costs.
+- Probabilistic sensor fusion and pose uncertainty.
+- Closed-loop coupling between planned motion, pose update, and new sensing.
+
+5.3 Decision Logic - Implemented with Mock Inputs
+
+The Brain runs the tree in a daemon thread at a nominal 10 Hz or can be ticked manually for tests.
+Implemented nodes are:
+
+SafetyGate:
+Stops for missing/invalid mission control, operator emergency request, inactive mission, invalid or
+stale pose, invalid map shape/values, invalid waypoint, invalid/unavailable proximity, or stale
+proximity. State freshness is limited to 1,500 ms with up to 1,000 ms future clock skew.
+
+EmergencyStop:
+Stops when any available ultrasonic distance is greater than zero and less than 15 cm.
+
+VictimConfirmation:
+Accepts a detection only when confidence is finite and within [0,1], timestamp is no older than
+5,000 ms, confidence is at least 0.85, coordinates are finite, and the resulting waypoint is on the
+map. Duplicate detections are not reconfirmed.
+
+NavigateToTarget:
+Uses direct geometric heading error and an arrival radius of two cells. It generates forward, left,
+or right differential commands. It does not yet consume an obstacle-free A* path.
+
+RLExplore:
+Loads a PPO checkpoint if present. At the audit cutoff no checkpoint is available, so the active
+implementation uses a deterministic directional unknown-cell heuristic.
+
+Idle:
+Provides the safe fallback when no higher-priority behavior is actionable.
+
+All commands pass through centralized sanitation: left/right values are clamped to [-255,255],
+duration is clamped to [0,1000] ms, and invalid values become zero.
+
+5.4 Explainability - Implemented at Decision-Provenance Level
+
+The current trace records tick_id, selected_action, reason, source_layer, status, sanitized command,
+and timestamp_ms. The integration demo shows distinguishable sources such as BT_SAFETY,
+BT_MISSION, and HEURISTIC_EXPLORATION.
+
+Pending improvements include persistent CSV/SQLite logs, dashboard presentation, model version,
+input-state reference, override-chain recording, and mission-level summaries.
+
+5.5 RL - Environment and Training Scaffold Implemented
+
+Implemented:
+
+- Gymnasium Env subclass.
+- Defined observation and action spaces.
+- Seed-aware reset, random obstacles, victim placement, sensing, rewards, termination, and info.
+- PPO training script, four parallel environments, progress callback, save path, and five-episode
+  post-training evaluation loop.
+- Behavior Tree loading/fallback logic.
+
+Not completed:
+
+- Saved trained model.
+- Learning curves and multi-seed evaluation.
+- Comparison against heuristic/A* baselines.
+- Generalization or robustness experiments.
+- Runtime validation on closed-loop simulator/hardware.
+
+5.6 Simulation and Visualization - Early Prototype
+
+The main module currently renders a tiled isometric floor. A separate temporary prototype contains
+robot kinematics, rays, ultrasonic and ToF classes, maps, hazards, and occupancy rendering. These
+artifacts demonstrate feasibility and exploration of the visualization approach but are not yet a
+single supported, contract-connected four-panel simulator. The module README's statement that
+implementation has not started is also outdated relative to the tile renderer and should be revised.
+
+5.7 WiFi Detection - Interface Defined, Implementation Pending
+
+The intended detection/result payload and mock scenarios exist. The audited WiFi module itself has
+no implemented data collector, preprocessing pipeline, trained model, detector, or localization
+code. README descriptions of a CNN and triangulation describe the intended design, not completed
+work.
+
+5.8 GA, Game Theory, and Hardware - Pending
+
+No GA/DEAP optimizer is implemented. No Game Theory coordination is implemented; it remains an
+optional extension and should be removed from the final minimum viable scope unless the single-
+robot system is completed early. No ESP32 firmware or Raspberry Pi deployment artifact is present.
+
+
+===============================================================================
+6. VERIFICATION, RESULTS, AND DISCUSSION
+===============================================================================
+
+6.1 Test Environment
+
+Audit date: 17 August 2026
+Command: .drishya/bin/python -m pytest -q
+Result: 97 passed in 2.30 seconds
+
+The exact wall-clock time is environment-specific and is evidence of test execution, not a robot
+performance benchmark.
+
+6.2 Test Distribution
+
+Shared/navigation tests (56):
+
+- Blackboard: 5
+- Bresenham ray casting: 5
+- Coordinate system: 4
+- Combined mapping: 17
+- Mock sensors: 1
+- Occupancy grid: 9
+- Sensor format: 4
+- Sensor-to-grid conversion: 8
+- ToF-to-grid conversion: 3
+
+Decision tests (41):
+
+- Emergency stop behavior.
+- SafetyGate mission, validity, freshness, and fail-safe paths.
+- Victim confidence, freshness, coordinates, and duplicate handling.
+- Waypoint navigation and arrival behavior.
+- RL/heuristic exploration behavior.
+- Idle behavior.
+- Full-tree priority and integration behavior.
+- Gymnasium environment reset/step/termination and action conversion.
+
+6.3 Integration Demonstration
+
+Command: .drishya/bin/python main.py
+
+Observed deterministic scenarios:
+
+1. IDLE
+   Status: MISSION_IDLE
+   Reason: mission_mode_idle
+   Source: BT_SAFETY
+   Command: left=0, right=0, duration=0
+
+2. EXPLORE
+   Status: RL_EXPLORE [Heuristic]
+   Source: HEURISTIC_EXPLORATION
+   Result: a bounded directional motor command is produced because no PPO model is present.
+
+3. EMERGENCY
+   Input: front proximity = 12 cm
+   Status: EMERGENCY_STOP
+   Reason: front distance is below the 15 cm threshold
+   Source: BT_SAFETY
+   Command: stop
+
+4. VICTIM
+   Input: mock strong detection
+   First tick: victim confirmation creates a waypoint.
+   Second tick: NAVIGATING_TO_TARGET is selected.
+   Source: BT_MISSION
+
+6.4 What the Results Establish
+
+The evidence supports these claims:
+
+- Shared coordinate and packet rules behave as specified by their tests.
+- Sensor rays can update a bounded categorical occupancy grid.
+- The Behavior Tree gives safety and mission validity higher priority than exploration.
+- Stale or malformed critical state causes a safe stop.
+- Detection confidence and freshness gates prevent arbitrary mock detections from becoming targets.
+- Motor values are centrally bounded.
+- Decisions expose their selected layer and reason.
+- Navigation mapping and decision logic can exchange data through the same Blackboard in a
+  deterministic headless harness.
+
+6.5 What the Results Do Not Establish
+
+The evidence does not yet support these claims:
+
+- 91.8% rescue success or any other rescue-success percentage.
+- 98.2-second mean rescue/execution time.
+- 42 Hz Raspberry Pi inference or 100 Hz ESP32 sensor streaming.
+- Better performance of PPO than a heuristic, because no trained checkpoint is present.
+- Better performance from GA, because GA is absent.
+- Real victim detection or localization accuracy, because detection inputs are mocks.
+- Collision-free target navigation, because direct steering is not A* path planning.
+- Multi-hazard robustness, because integrated hazard dynamics are absent.
+- Hardware-in-the-loop stability, because hardware integration is pending.
+
+6.6 Correction to the Proposal's Results Chapter
+
+The proposal's Chapter 5 presents exact results in completed tense. No repository experiment,
+dataset, log, model, or HIL artifact substantiates those numbers at this cutoff. For academic
+integrity, those values must not be repeated as achieved mid-term results. If they were intended as
+expected targets or illustrative placeholders, relabel them accordingly. If the team has external
+evidence not stored in the repository, it must be supplied with raw logs, configurations, sample
+counts, analysis code, and hardware setup before the claims can be reinstated.
+
+6.7 Discussion
+
+The strongest mid-term achievement is architectural discipline. Safety checks, state freshness,
+bounded actuation, mock independence, and traceable decisions are appropriate foundations for a
+high-risk robot. The test count is meaningful because it covers many edge cases, but it should not
+be confused with system validation. Most tests are component-level tests with deterministic data.
+
+The largest technical gap is closed-loop reality. The mapping module updates a grid, but no complete
+controller changes robot pose in response to commands and then regenerates sensors through the
+supported integration path. The victim detector is mocked, global path planning is missing, and the
+RL environment has not produced benchmark evidence. Completing that loop is more valuable than
+adding optional Game Theory or a complex GA prematurely.
+
+
+===============================================================================
+7. GAP ANALYSIS, LIMITATIONS, AND RISK MANAGEMENT
+===============================================================================
+
+7.1 Proposal-to-Implementation Alignment
+
+Proposal element                         Mid-term state                 Decision
+---------------------------------------  -----------------------------  ---------------------------
+Grid simulation                          Early/prototype                Complete closed loop
+Behavior Tree safety                     Implemented and tested         Harden and integrate
+RL adaptive navigation                   Env/scaffold only              Train and benchmark
+GA strategy optimization                 Not implemented                Add only after baselines
+Game Theory                              Not implemented/optional       Defer from minimum scope
+Explainability                           Provenance trace implemented   Persist and visualize
+Multi-hazard environment                 Prototype fragments            Define/test hazard models
+Raspberry Pi + ESP32                     Planned                        Integrate in stages
+WiFi CSI victim perception               Interface/mocks only           Highest-priority experiment
+
+7.2 Scope Drift and Reconciliation
+
+The proposal emphasizes a hybrid multi-hazard decision framework, whereas the repository README
+emphasizes WiFi CSI detection of people behind rubble. This is not necessarily a contradiction if
+the scope is presented as follows:
+
+- Project Drishya is the autonomous SAR robot.
+- WiFi CSI is the proposed victim-perception subsystem.
+- Occupancy mapping and planning provide spatial navigation.
+- BT/RL form the hybrid decision subsystem.
+- Multi-hazard simulation is the evaluation context.
+- GA is an optional optimization stage after the main system is measurable.
+- Game Theory is future work, not a current single-robot deliverable.
+
+The team and supervisor should approve this wording so the report, presentation, and code tell one
+story.
+
+7.3 Technical Limitations
+
+Mapping:
+
+- Positive readings are treated as obstacle endpoints; explicit max-range/no-hit semantics are
+  missing.
+- All 64 ToF cells are projected without confidence or field-of-view calibration evidence.
+- The categorical grid can lock false occupied cells and lacks probabilistic evidence fusion.
+- Pose uncertainty and moving obstacles are not modeled.
+
+Navigation:
+
+- Direct steering does not check whether the straight path crosses occupied cells.
+- No A*, frontier extraction, local planner, or recovery behavior is complete.
+- Arrival radius of two cells equals roughly 20 cm and requires physical validation.
+
+Decision safety:
+
+- A 15 cm threshold is a software constant, not yet derived from stopping distance.
+- 10 Hz is a configured target, not measured worst-case control latency.
+- Thread/process failure, communication loss, watchdog, and actuator feedback are not implemented.
+- Safe stop commands have not been tested on real motors.
+
+RL:
+
+- The observation contains victim-distance information that may be unavailable in real exploration.
+- The simulator's simple square reveal differs from physical ultrasonic/ToF sensing.
+- Random independent obstacle cells may not resemble traversable collapsed structures.
+- No training, checkpoint, seed study, baseline, or generalization result exists.
+
+WiFi CSI:
+
+- No local dataset or implemented pipeline exists.
+- Static victims, rubble composition, multipath, environmental change, and false positives are hard.
+- Presence detection and localization are separate difficulty levels and should be staged.
+
+Software integration:
+
+- Documentation and actual files differ in places.
+- Timestamp field names are in migration (timestamp and timestamp_ms).
+- Blackboard get() can expose mutable references.
+- The simulator is not yet connected to the supported queue/Blackboard loop.
+
+7.4 Risk Register
+
+Risk                              Likelihood  Impact  Mitigation
+--------------------------------  ----------  ------  ------------------------------------------
+CSI fails to generalize           High        High    Baselines, diverse data, scoped claims
+Integration contract mismatch     Medium      High    Schema version and contract tests
+Robot collides despite map        Medium      High    A*, local safety, low-speed trials
+RL underperforms heuristic        Medium      Medium  Report honestly; retain heuristic
+Insufficient compute on Pi        Medium      Medium  Profile, compress model, lower rate
+Sensor noise corrupts map         High        High    Calibration and probabilistic fusion
+Scope overload                    High        High    Defer Game Theory; gate GA
+Hardware delivery/failure         Medium      High    Early bench tests and simulator fallback
+Unreproducible results            Medium      High    Seeds, configs, raw logs, version tags
+Overclaim during defense          Medium      High    Use evidence matrix and claim language
+
+7.5 Ethical and Safety Considerations
+
+The robot should be presented as a decision-support prototype, not a replacement for trained rescue
+personnel. A false negative may miss a victim; a false positive may redirect scarce rescue effort.
+CSI sensing can also raise privacy concerns because it is device-free and non-visual. The final work
+should document consent for human data collection, anonymize datasets, limit retention, state
+failure modes, and preserve operator stop/override. Physical tests should begin at low speed in a
+controlled enclosure with accessible power isolation.
+
+
+===============================================================================
+8. REMAINING WORK PLAN
+===============================================================================
+
+The following sequence is prioritized by dependency, not by novelty.
+
+Phase 1 - Contract Freeze and Continuous Verification (Weeks 1-2)
+
+- Reconcile timestamp, pose, waypoint, path, and sensor semantics.
+- Add schema version, units, max-range/no-return behavior, and ownership rules.
+- Update outdated READMEs and remove descriptions of absent files as if implemented.
+- Add continuous test execution and record environment versions.
+- Exit criterion: all modules use one documented contract and all tests pass.
+
+Phase 2 - Supported Closed-Loop Simulator (Weeks 2-5)
+
+- Merge useful temporary simulator features into modules/simulation_viz.
+- Implement robot kinematics, ground-truth map, sensor generation, queue publication, and pose update.
+- Connect motor commands back into simulation.
+- Display ground truth, robot perception, sensors, and decision trace.
+- Add fire, collapse, flood, and chemical hazards only with explicit dynamics and sensor rules.
+- Exit criterion: a command changes pose, produces new sensor data, updates the map, and produces the
+  next explained decision in one repeatable run.
+
+Phase 3 - Navigation Completion (Weeks 3-6, parallel with Phase 2 where safe)
+
+- Implement A* over known free cells with obstacle inflation.
+- Implement frontier detection and selection.
+- Add replanning and unreachable-target handling.
+- Validate planned paths on fixed maps before dynamic scenarios.
+- Exit criterion: path validity and success are measured on a documented test-map suite.
+
+Phase 4 - WiFi CSI Baseline (Weeks 2-8)
+
+- Bring up ESP32 CSI capture using official APIs.
+- Define collection protocol and ethics/consent process.
+- Collect pilot data for empty versus occupied conditions across multiple sessions.
+- Visualize amplitude/phase stability and measure packet quality.
+- Train a simple baseline, then a compact neural model only if justified.
+- Calibrate the confidence threshold and publish live detection/result messages.
+- Exit criterion: held-out evaluation with confusion matrix and latency, plus integration with BT.
+
+Phase 5 - PPO Training and Controlled Comparison (Weeks 6-9)
+
+- Correct observation leakage and align simulated sensing with runtime inputs.
+- Establish random, wall-following, and frontier baselines.
+- Run at least [INSERT AGREED NUMBER, recommended >=10] independent seeds per condition.
+- Compare coverage, collisions, success, path length, and time/steps.
+- Preserve model, config, code revision, and raw episode logs.
+- Exit criterion: reproducible evidence showing when PPO helps or does not help.
+
+Phase 6 - GA Decision Gate (Weeks 9-11)
+
+- Proceed only if simulator, baseline, and metrics are stable.
+- Define a small chromosome such as reward weights or exploration parameters.
+- Use separate optimization and final test scenario sets to prevent overfitting.
+- Compare GA-tuned parameters against manual/default parameters.
+- If schedule slips, document GA as future work rather than presenting a superficial result.
+
+Phase 7 - Hardware Integration (Weeks 8-14)
+
+- Bench-test each sensor and motor channel.
+- Implement watchdog, command timeout, physical emergency stop, and safe startup state.
+- Profile Pi inference and decision timing; measure ESP32 packet rate.
+- Calibrate kinematics, sensor offsets, and stopping distance.
+- Progress from wheels-off-ground to enclosed low-speed tests, then controlled navigation.
+- Exit criterion: timestamped logs substantiate rates, latency, stop behavior, and repeatability.
+
+Phase 8 - Final Evaluation and Documentation (Weeks 12-16)
+
+- Freeze code and scenarios before final data collection.
+- Run ablation and unseen-scenario experiments.
+- Analyze failures and confidence intervals.
+- Produce final report, diagrams, demo video, setup guide, and bill of materials.
+
+8.1 Recommended Minimum Viable Final Project
+
+To protect quality, the minimum viable final submission should include:
+
+1. A closed-loop simulator connected through the real contracts.
+2. Valid occupancy mapping and A*/frontier navigation.
+3. BT safety and explainability trace.
+4. At least a validated WiFi presence-detection baseline or a carefully documented negative result.
+5. A reproducible comparison of heuristic and PPO exploration.
+6. Basic controlled hardware movement and sensing with emergency stop.
+
+GA is secondary. Game Theory should remain future work unless all six items are complete.
+
+
+===============================================================================
+9. EXPECTED FINAL EVALUATION
+===============================================================================
+
+9.1 Mapping Metrics
+
+- Cell classification accuracy against ground truth.
+- Occupied-cell precision, recall, and F1.
+- Intersection over Union for occupied space.
+- Map coverage versus time.
+- Endpoint error in centimeters.
+- Effect of sensor noise and pose error.
+
+9.2 Navigation and Mission Metrics
+
+- Target reach rate.
+- Collision count and collision-free rate.
+- Path length and path efficiency relative to shortest feasible path.
+- Time or control steps to target.
+- Exploration coverage at fixed budgets.
+- Stagnation/recovery count.
+- Rescue/detection success with an operational definition.
+
+9.3 Safety and Explainability Metrics
+
+- Emergency-stop trigger accuracy.
+- Stop latency from hazard observation to issued command.
+- Invalid/stale-state rejection rate.
+- Percentage of commands with complete traces.
+- Trace correctness against active tree leaf.
+- Number and cause of policy overrides.
+
+9.4 WiFi CSI Metrics
+
+- Precision, recall, F1, sensitivity, and specificity.
+- False alarms per minute.
+- Receiver operating characteristic and precision-recall curves.
+- Detection/localization latency.
+- Performance by person, wall type, distance, session, and environment.
+- Calibration error of reported confidence.
+- Localization mean/median error only if localization is implemented.
+
+9.5 RL/GA Metrics
+
+- Mean and standard deviation or confidence interval across seeds.
+- Learning curve and sample efficiency.
+- Comparison against deterministic baselines on held-out maps.
+- Generalization gap between training and unseen scenarios.
+- GA convergence and held-out benefit, if GA is implemented.
+
+9.6 Experimental Reporting Template
+
+For every table or graph, record:
+
+- hypothesis;
+- independent and dependent variables;
+- scenario generator/version;
+- code commit;
+- hardware/software configuration;
+- random seeds and number of trials;
+- metric definition;
+- mean, dispersion, and failures;
+- limitations and threats to validity.
+
+
+===============================================================================
+10. CONCLUSION
+===============================================================================
+
+Project Drishya has established a credible mid-term software foundation for an explainable
+autonomous SAR robot. The shared coordinate system, sensor contract, Blackboard, occupancy mapping,
+priority Behavior Tree, safe command publication, decision trace, RL environment, and headless
+integration harness are implemented. The audited suite passes 97 tests, and deterministic scenarios
+show that mission validity and proximity safety override exploration, fresh high-confidence mock
+detections become navigation targets, and each command carries a reason and source layer.
+
+The project is not yet an end-to-end rescue robot. The current detector is mocked, target steering
+is not a complete path planner, the simulator is not closed loop, PPO is untrained, GA is absent,
+multi-hazard evaluation is incomplete, and hardware performance is unmeasured. Recognizing these
+limits strengthens rather than weakens the defense: the team can demonstrate exactly what works,
+show the tests, explain the architecture, and present a dependency-aware plan for the remaining
+research.
+
+The next decisive milestone is not an additional optional algorithm. It is a repeatable closed-loop
+system in which sensing updates the map, the map supports a safe plan, the decision tree selects and
+explains an action, the action changes the robot state, and the cycle is evaluated using fixed
+metrics. Once this loop and the CSI baseline are stable, PPO and optional GA can be evaluated fairly.
+
+
+===============================================================================
+REFERENCES
+===============================================================================
+
+[1] M. Iovino, E. Scukins, J. Styrud, P. Ogren, and C. Smith, "A Survey of Behavior
+    Trees in Robotics and AI," Robotics and Autonomous Systems, vol. 154, 104096,
+    2022. DOI: 10.1016/j.robot.2022.104096.
+    https://www.sciencedirect.com/science/article/pii/S0921889022000513
+
+[2] M. Colledanchise and P. Ogren, Behavior Trees in Robotics and AI: An Introduction,
+    CRC Press, 2018.
+
+[3] J. Schulman, F. Wolski, P. Dhariwal, A. Radford, and O. Klimov, "Proximal Policy
+    Optimization Algorithms," arXiv:1707.06347, 2017.
+    https://arxiv.org/abs/1707.06347
+
+[4] Stable-Baselines3 Contributors, "PPO Documentation."
+    https://stable-baselines3.readthedocs.io/en/master/modules/ppo.html
+
+[5] Farama Foundation, "Make Your Own Custom Environment," Gymnasium Documentation.
+    https://gymnasium.farama.org/main/tutorials/environment_creation/
+
+[6] F.-A. Fortin et al., "DEAP: Evolutionary Algorithms Made Easy," Journal of Machine
+    Learning Research, vol. 13, pp. 2171-2175, 2012.
+    https://jmlr.org/papers/v13/fortin12a.html
+
+[7] Espressif Systems, "Wi-Fi Channel State Information," ESP-IDF Programming Guide.
+    https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-guides/
+    wifi-driver/wifi-vendor-features.html
+
+[8] J. Strohmayer and M. Kampel, "WiFi CSI-Based Long-Range Through-Wall Human Activity
+    Recognition with the ESP32," in Computer Vision Systems, pp. 41-50, 2023.
+    DOI: 10.1007/978-3-031-44137-0_4.
+    https://repositum.tuwien.at/handle/20.500.12708/190653
+
+[9] "WiFi-Based Human Activity Recognition Through Wall Using Deep Learning,"
+    Engineering Applications of Artificial Intelligence, 2023.
+    DOI: 10.1016/j.engappai.2023.107171.
+    https://www.sciencedirect.com/science/article/pii/S0952197623013556
+
+[10] P. E. Hart, N. J. Nilsson, and B. Raphael, "A Formal Basis for the Heuristic
+     Determination of Minimum Cost Paths," IEEE Transactions on Systems Science and
+     Cybernetics, vol. 4, no. 2, pp. 100-107, 1968. DOI: 10.1109/TSSC.1968.300136.
+
+[11] J. E. Bresenham, "Algorithm for Computer Control of a Digital Plotter," IBM Systems
+     Journal, vol. 4, no. 1, pp. 25-30, 1965. DOI: 10.1147/sj.41.0025.
+
+[12] S. Shrestha, S. Parajuli, P. Shah, B. Shrestha, and M. K. Guragai,
+     "Navigation of Mobile Robot with Nav2 and SLAM Using LiDAR," 2025 4th
+     International Conference on Sentiment Analysis and Deep Learning (ICSADL),
+     pp. 579-585, 2025. DOI: 10.1109/ICSADL65848.2025.10933029.
+     https://doi.org/10.1109/ICSADL65848.2025.10933029
+
+[13] Project Drishya Team, "Hybrid Explainable Decision-Making Framework for an Autonomous
+     Search-and-Rescue Robot in Multi-Hazard Disaster Environments," Major Project
+     Proposal, Department of Electronics and Computer Engineering, Purwanchal Campus,
+     Tribhuvan University, 2083/02/29.
+
+Note: Before submission, convert references to the department's required IEEE format and verify
+every bibliographic field. Remove sources not cited in the final edited report.
+
+
+===============================================================================
+APPENDIX A: REPOSITORY EVIDENCE MATRIX
+===============================================================================
+
+Claim                                      Evidence artifact
+-----------------------------------------  -----------------------------------------------
+Shared coordinate convention               shared/coordinate_system.py and 4 tests
+Sensor validation                           shared/sensor_format.py and 4 tests
+Thread-safe shared state                    shared/blackboard.py and 5 tests
+Bresenham ray casting                       shared/bresenham.py and 5 tests
+Categorical occupancy grid                  modules/navigation/occupancy_grid.py and 9 tests
+Ultrasonic/ToF mapping                      modules/navigation/mapping.py and related 28 tests
+Six-stage priority BT                       modules/decision_logic/behavior_tree/tree_builder.py
+Fail-safe input gate                        behavior_tree/safety_gate.py and decision tests
+Proximity emergency stop                    behavior_tree/emergency_stop.py and decision tests
+Victim confidence gate                      behavior_tree/victim_confirmation.py and tests
+Target steering                             behavior_tree/navigate_to_target.py and tests
+PPO/heuristic exploration interface         behavior_tree/rl_explore.py and tests
+Custom RL environment                       rl_env/sar_explore_env.py and environment tests
+Bounded command + trace                     decision_output.py and decision tests
+10 Hz target brain loop                     modules/decision_logic/brain.py
+Cross-module deterministic scenarios        main.py
+Total automated verification                97 passing tests at audit cutoff
+
+Absent evidence at cutoff:
+
+- No CSI dataset or detector implementation.
+- No trained PPO checkpoint or learning curve.
+- No GA code or output.
+- No complete supported A* or frontier module.
+- No complete four-panel integrated simulator.
+- No firmware or HIL logs.
+- No evidence for numerical results stated in proposal Chapter 5.
+
+
+===============================================================================
+APPENDIX B: MID-TERM DEFENSE PLAN
+===============================================================================
+
+B.1 Recommended 12-Minute Presentation
+
+Slide 1 - Title and one-sentence contribution (30 seconds)
+
+"Project Drishya is a modular search-and-rescue robot framework that separates deterministic safety
+from adaptive exploration and records why every action is selected."
+
+Slide 2 - Problem and users (60 seconds)
+
+- Hazardous, occluded, time-critical search environment.
+- Need for mapping, non-visual victim sensing, safe autonomy, and auditability.
+- Be precise: WiFi CSI is promising through-wall sensing, not magical imaging.
+
+Slide 3 - Scope evolution and architecture (75 seconds)
+
+- Original hybrid BT/RL/GA proposal.
+- Four implementation modules and Blackboard.
+- WiFi CSI positioned as perception, BT/RL as decision, map/planner as navigation.
+
+Slide 4 - Coordinate and data contracts (60 seconds)
+
+- Show 50 x 50 grid, 10 cm/cell, center origin.
+- Show one sensor packet and Blackboard flow.
+- Explain why contract-first development allows parallel team work.
+
+Slide 5 - Mapping pipeline (75 seconds)
+
+- Sensor angle -> endpoint -> Bresenham ray -> free/occupied grid.
+- Show one before/after map or test case.
+- State categorical-grid limitations openly.
+
+Slide 6 - Explainable Behavior Tree (90 seconds)
+
+- Show priority order.
+- Explain SafetyGate, emergency threshold, detection threshold, fallback.
+- Show a decision trace with reason and source layer.
+
+Slide 7 - RL status (60 seconds)
+
+- Show environment, observation, actions, and reward.
+- Say "training scaffold implemented; no benchmarked checkpoint yet."
+- Explain why heuristic fallback keeps the system demonstrable.
+
+Slide 8 - Verification evidence (75 seconds)
+
+- 97 tests passed.
+- 56 shared/navigation and 41 decision tests.
+- Four integration scenarios.
+- Clearly distinguish unit/integration evidence from field performance.
+
+Slide 9 - Live demo (90 seconds)
+
+- Run main.py.
+- Highlight idle, explore, emergency, and victim outputs.
+- Point to reason/source/command rather than reading every line.
+
+Slide 10 - Honest gap analysis (60 seconds)
+
+- Detector mocked; A* and closed-loop simulator pending; PPO untrained; hardware pending.
+- Proposal numerical results are not claimed.
+- This slide builds examiner trust.
+
+Slide 11 - Remaining plan and evaluation (75 seconds)
+
+- Closed loop -> A*/frontier -> CSI baseline -> PPO comparison -> hardware -> final experiments.
+- GA is gated; Game Theory is future work.
+
+Slide 12 - Conclusion (30 seconds)
+
+- Tested foundation exists.
+- Safety priority and provenance are demonstrated.
+- Next milestone is end-to-end closed-loop evidence.
+
+B.2 Live Demo Procedure
+
+Pre-defense checks:
+
+1. Activate environment: source .drishya/bin/activate
+2. Run tests: python -m pytest -q
+3. Run integration: python main.py
+4. Save a screenshot and plain-text output as backup.
+5. Turn off unrelated notifications and increase terminal font.
+
+What to narrate:
+
+- "This is deterministic mock input, so the panel can reproduce it."
+- "The missing PPO checkpoint is detected; the system labels the fallback rather than pretending
+  PPO is running."
+- "At 12 cm the safety branch returns a zero command before exploration."
+- "A strong fresh mock detection creates a target, and the next tick navigates toward it."
+- "Every output states source layer, reason, and bounded command."
+
+Do not say:
+
+- "The robot detects people through any wall."
+- "Our PPO improves rescue rate" before benchmark data exist.
+- "Hardware runs at 42/100 Hz" without logs.
+- "A* is implemented" when current target behavior is direct steering.
+- "All modules are complete" because tests pass.
+
+B.3 Backup Demonstration Evidence
+
+Carry these even if the live demo works:
+
+- Test output screenshot showing 97 passed.
+- Integration output for all four scenarios.
+- Behavior Tree diagram.
+- Coordinate-system diagram.
+- Example decision/trace dictionary.
+- One occupancy-grid test visualization.
+- A one-page current/pending matrix.
+
+B.4 Strong Opening Script
+
+"Good [morning/afternoon]. Project Drishya addresses a central problem in autonomous disaster
+response: a robot must adapt in an unknown environment without allowing an opaque learned policy to
+override safety. Our solution separates perception, mapping, and decision modules through a shared
+Blackboard. A priority Behavior Tree validates mission and sensor state, stops for immediate danger,
+and supervises target navigation or exploration. At mid-term, we have implemented and tested this
+software foundation with 97 passing tests and a reproducible navigation-decision demo. We will show
+both what the system currently proves and what remains before end-to-end and hardware claims can be
+made."
+
+B.5 Strong Closing Script
+
+"In summary, our mid-term contribution is a tested autonomy foundation with explicit safety
+priority and decision provenance. The current system maps mock range data, rejects invalid or stale
+state, stops for proximity danger, converts a qualified victim detection into a target, and labels
+whether exploration comes from PPO or a heuristic. We do not yet claim real CSI accuracy, trained
+policy superiority, or hardware performance. Our next milestone is a supported closed-loop
+simulator and CSI baseline, followed by controlled comparison and hardware integration. This gives
+us a clear, measurable path from modular correctness to an evaluated rescue prototype."
+
+
+===============================================================================
+APPENDIX C: LIKELY VIVA QUESTIONS AND MODEL ANSWERS
+===============================================================================
+
+Q1. What is the novelty of the project if BT, PPO, and CSI already exist?
+
+The intended contribution is system integration and evaluation: an affordable SAR architecture in
+which deterministic safety supervises adaptive exploration, WiFi CSI supplies non-visual detection,
+and every command includes a provenance trace. We are not claiming to invent the component methods.
+
+Q2. Why use a Behavior Tree instead of a finite-state machine?
+
+The hierarchical priority structure is easier to extend and inspect, and a memoryless selector
+reevaluates high-priority safety on every tick. A finite-state machine could implement the same
+logic, but transitions become harder to maintain as behaviors and interruptions grow.
+
+Q3. Is the Behavior Tree formally safe?
+
+No. It enforces explicit software priorities and fail-safe validation, which is necessary but not a
+formal physical safety proof. Braking distance, latency, sensor failure, watchdogs, and actuator
+behavior still require hardware testing.
+
+Q4. Why is RL not used for emergency avoidance?
+
+Emergency behavior must be predictable and auditable. RL is restricted to exploration proposals;
+deterministic branches retain authority over mission validity and immediate proximity hazards.
+
+Q5. Are you currently using PPO?
+
+The environment and training/inference path exist, but no trained checkpoint is present at the
+mid-term cutoff. The running demo correctly identifies and uses a deterministic heuristic fallback.
+
+Q6. Why use PPO?
+
+PPO is a practical policy-gradient baseline with stable clipped updates and mature tooling. Its
+suitability is a hypothesis to test against frontier and deterministic baselines, not an assumption.
+
+Q7. What is wrong with the current RL observation?
+
+It includes normalized true victim distance, which may be privileged information during exploration.
+Before training, we must replace it with observable detector-derived information or remove it.
+
+Q8. How is explainability achieved?
+
+Each final decision records the tick, selected behavior, reason, source layer, status, sanitized
+command, and timestamp. This provides decision provenance. For PPO, fuller interpretation would
+also require model/version and action-distribution information.
+
+Q9. Why use a Blackboard?
+
+It decouples modules and allows separate developers or threads to exchange state through defined
+keys. Atomic grouped updates and consistent snapshots reduce partial-state problems.
+
+Q10. Is the Blackboard completely thread-safe?
+
+Dictionary operations are lock-protected, and snapshots are deep copied. However, get() returns the
+stored object reference, so external mutation is a remaining ownership risk that we plan to harden.
+
+Q11. How does occupancy mapping work?
+
+The robot pose and sensor angle define a grid endpoint. Bresenham enumerates cells along the ray;
+intermediate cells are marked free and a valid endpoint occupied. Five ultrasonic rays and 64 ToF
+projections update the map.
+
+Q12. Why is a 15 cm emergency threshold used?
+
+It is a conservative development constant for mock tests, not yet a physically validated threshold.
+The final value must be derived from robot speed, sensing/control latency, braking distance, and a
+safety margin.
+
+Q13. Does the current navigator avoid obstacles on the way to a victim?
+
+Not yet globally. The current behavior steers geometrically toward a waypoint while the emergency
+branch handles immediate proximity. A* with obstacle inflation and replanning is remaining work.
+
+Q14. Can WiFi really detect a person through rubble?
+
+CSI-based non-line-of-sight sensing is supported by prior research, but performance is environment-
+dependent. Our project must validate its own hardware and conditions. We will report limitations,
+false positives, false negatives, and generalization rather than assume universal penetration.
+
+Q15. Why not rely only on a camera or thermal camera?
+
+Those sensors are valuable but can be blocked by occlusion. CSI is being studied as a complementary
+modality. A field system would ideally fuse modalities rather than claim one sensor is sufficient.
+
+Q16. How will CSI data be split for machine learning?
+
+We will separate people, collection sessions, and preferably environments between training and test
+sets. Randomly splitting adjacent windows from one recording would leak environmental patterns and
+overstate accuracy.
+
+Q17. Why is GA not implemented yet?
+
+Optimization requires a stable simulator, baseline, and objective. Implementing GA before those
+exist would optimize noise. It is sequenced after closed-loop evaluation and may be deferred if it
+threatens core-system quality.
+
+Q18. Why is Game Theory excluded?
+
+The scoped platform is single-robot. Game Theory is useful for multi-robot allocation, but it is an
+optional future extension and not necessary to prove the current research question.
+
+Q19. What do 97 passing tests prove?
+
+They provide reproducible evidence for component and Behavior Tree behavior under tested inputs.
+They do not prove real-world rescue performance, CSI accuracy, or hardware safety.
+
+Q20. Why do the proposal's result numbers not appear as achieved results here?
+
+We could not identify raw data, experiment configuration, code artifacts, or hardware logs that
+support them at the audit cutoff. To preserve academic integrity, we treat them as unverified
+targets unless evidence is supplied.
+
+Q21. What is the most important next milestone?
+
+A supported closed-loop simulator: motor command changes pose, pose changes sensor readings,
+sensors update the map, planning updates intent, and the Behavior Tree produces the next explained
+command.
+
+Q22. How will you show that the hybrid system is better?
+
+Through controlled ablation: heuristic only, BT plus heuristic, BT plus PPO, and optionally GA-tuned
+variants, all evaluated on identical held-out scenarios with repeated seeds and confidence intervals.
+
+Q23. What happens when sensors stop publishing?
+
+Critical pose and proximity payloads have freshness limits. Stale or missing critical state triggers
+SafetyGate and produces a zero motor command. Hardware communication timeout/watchdog remains to be
+implemented.
+
+Q24. What is your primary limitation at mid-term?
+
+The components are not yet connected in a complete closed loop, and the victim detector remains a
+mock. Therefore current evidence is software-foundation evidence rather than end-to-end performance.
+
+Q25. If PPO performs worse than the heuristic, is the project a failure?
+
+No. A rigorous negative comparison is an engineering result. The safe modular architecture retains
+the heuristic, and the analysis would identify why the learned policy failed and what conditions it
+requires. We should select the method supported by evidence.
+
+
+===============================================================================
+APPENDIX D: FINALIZATION CHECKLIST AND QUESTIONS FOR THE TEAM
+===============================================================================
+
+The following information is required before this draft can be treated as submission-final:
+
+1. What exact chapter order, font/page format, citation style, and page limit does the department
+   require for the mid-term report?
+2. What are the supervisor's full name, designation, and required approval-page wording?
+3. What is the official submission/defense date?
+4. What work exists outside this repository: CSI data, models, simulator branches, firmware,
+   hardware photographs, purchases, experiment logs, or notebooks?
+5. Which hardware components have actually been acquired and bench-tested?
+6. Has any PPO training been run locally without committing the checkpoint/logs? If yes, provide
+   configuration, seeds, logs, and model files.
+7. What did the proposal's 64.2%, 91.8%, 98.2 s, 42 Hz, and 100 Hz figures represent, and where are
+   their raw records?
+8. Has the supervisor approved the README's WiFi-CSI emphasis as part of the original multi-hazard
+   hybrid framework?
+9. Are GA and Game Theory mandatory assessment requirements, or may GA be conditional and Game
+   Theory future work?
+10. What percentage or milestones does the department expect by mid-term?
+
+Before submission:
+
+- Replace all square-bracket placeholders.
+- Insert real figures/screenshots with captions in the formatted document version.
+- Update test count and status after the final merge.
+- Attach or cite the exact code commit used for the defense.
+- Verify every reference and ensure each is cited in the body.
+- Obtain team and supervisor approval for all scope/status language.
+- Remove the defense appendices if the department requires only the formal report body.
+- Never convert targets or mock demonstrations into achieved empirical results.
+
+
+END OF REPORT
+
+
+
+
+
+
+Lets add manoj sir paper too 
