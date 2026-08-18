@@ -153,6 +153,27 @@ class TestAStar(unittest.TestCase):
         path = a_star(grid, start, goal)
 
         self.assertIsNone(path)
-        
+    
+    def test_start_out_of_bounds(self):
+        grid = OccupancyGrid()
+
+        start = (-1, 25)
+        goal = (25, 30)
+
+        path = a_star(grid, start, goal)
+
+        self.assertIsNone(path)
+
+
+    def test_goal_out_of_bounds(self):
+        grid = OccupancyGrid()
+
+        start = (25, 25)
+        goal = (50, 30)
+
+        path = a_star(grid, start, goal)
+
+        self.assertIsNone(path)
+
 if __name__ == "__main__":
     unittest.main()
