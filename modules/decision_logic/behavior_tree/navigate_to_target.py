@@ -4,7 +4,7 @@
 #
 # Reads the active navigation waypoint from the blackboard.
 # If a waypoint exists and the robot is not already there:
-#   - Computes a simple steering command (left/right/forward) toward the waypoint
+#   - Steers toward the next cell of a collision-checked planned path
 #   - Writes the motor command to "state/motor_command"
 #   - Returns RUNNING (still navigating)
 #
@@ -15,10 +15,10 @@
 import math
 import py_trees
 from shared.coordinate_system import world_to_grid, grid_to_world
-from modules.decision_logic.contracts import ROBOT_POSE, TARGET_WAYPOINT
+from modules.decision_logic.contracts import PATH_STATUS, PLANNED_PATH, ROBOT_POSE, TARGET_WAYPOINT
 from modules.decision_logic.decision_output import publish_decision
 
-ARRIVAL_RADIUS_CELLS = 2    # cells — considered "arrived" within this range
+ARRIVAL_RADIUS_CELLS = 0    # authoritative grid simulation arrives on the target cell
 NAV_SPEED            = 130  # motor speed during navigation
 
 
@@ -95,14 +95,25 @@ class NavigateToTarget(py_trees.behaviour.Behaviour):
             self.feedback_message = "Arrived at waypoint"
             return py_trees.common.Status.SUCCESS
 
-        # Still navigating
-        motor_cmd = _steer_toward(robot_pose, target_row, target_col)
+        # Follow the collision-checked path rather than steering through unknown cells.
+        path = self.bb.get(PLANNED_PATH, [])
+        if not isinstance(path, list) or not path:
+            if self.bb.get(PATH_STATUS) is not None:
+                self.feedback_message = "Waiting for a planned path"
+                return py_trees.common.Status.FAILURE
+            # Legacy/demo publishers predate path_status; preserve their direct
+            # steering behavior while the integrated simulator always uses Dijkstra.
+            next_row, next_col = target_row, target_col
+        else:
+            next_row, next_col = path[0]
+        motor_cmd = _steer_toward(robot_pose, next_row, next_col)
         status = f"NAVIGATING_TO_TARGET [dist={dist:.1f} cells]"
         publish_decision(
             self.bb,
             behavior=self.name,
             status=status,
-            reason=f"active_waypoint={waypoint};distance_cells={dist:.2f}",
+            reason=(f"active_waypoint={waypoint};next_cell={(next_row, next_col)};"
+                    f"distance_cells={dist:.2f}"),
             source_layer="BT_MISSION",
             command=motor_cmd,
         )
