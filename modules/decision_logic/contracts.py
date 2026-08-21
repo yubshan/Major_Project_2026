@@ -11,6 +11,7 @@ MISSION_CONTROL = "mission/control"
 ROBOT_POSE = "navigation/robot_pose"
 OCCUPANCY_GRID = "navigation/occupancy_grid"
 PLANNED_PATH = "navigation/planned_path"
+PATH_STATUS = "navigation/path_status"
 TARGET_WAYPOINT = "navigation/target_waypoint"
 PROXIMITY = "sensor/proximity"
 DETECTION_RESULT = "detection/result"
@@ -20,6 +21,7 @@ BT_STATUS = "state/bt_status"
 DECISION_STATE = "decision/state"
 DECISION_TRACE = "decision/trace"
 DECISION_TICK_ID = "decision/tick_id"
+SIMULATION_METRICS = "simulation/metrics"
 
 MISSION_MODES = {"idle", "run", "pause", "return", "stop"}
 PROXIMITY_FIELDS = (

@@ -58,3 +58,5 @@ logs/
 tmp/
 modules/decision_logic/models/
 modules/decision_logic/logs/
+simulation_brain/models/
+simulation_brain/logs/
