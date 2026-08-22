@@ -23,36 +23,110 @@ def run_headless(
     return results
 
 
-def run_visual(scenario: str, seed: int, model_path: str | None = None) -> dict:
+def run_visual(
+    scenario: str,
+    seed: int,
+    model_path: str | None = None,
+    speed: float = 0.5,
+) -> dict:
     from simulation_brain.renderer import SimulationRenderer
+    from simulation_brain.visual_state import VisualSessionState
 
     controller = SimulationController(scenario=scenario, seed=seed, model_path=model_path)
     renderer = SimulationRenderer(controller)
-    paused = False
+    visual = VisualSessionState.from_controller(controller, speed=speed)
     running = True
     accumulator = 0.0
-    tick_seconds = 1.0 / controller.config.tick_hz
+
+    def reset() -> None:
+        nonlocal controller, accumulator
+        controller = SimulationController(scenario=scenario, seed=seed, model_path=model_path)
+        renderer.controller = controller
+        visual.reset_for(controller)
+        accumulator = 0.0
+
+    def apply_action(action: str) -> bool:
+        nonlocal running
+        if action == "quit":
+            running = False
+        elif action == "pause":
+            visual.paused = not visual.paused
+        elif action == "reset":
+            reset()
+        elif action == "view":
+            visual.toggle_view()
+        elif action == "sensors":
+            visual.show_sensors = not visual.show_sensors
+        elif action == "path":
+            visual.show_path = not visual.show_path
+        elif action == "edit":
+            visual.edit_obstacles = not visual.edit_obstacles
+            visual.notification = (
+                "Obstacle edit mode: click a map cell to add or remove a wall."
+                if visual.edit_obstacles else "Obstacle edit mode disabled."
+            )
+            visual.notification_seconds = 3.0
+        elif action == "slower":
+            visual.adjust_speed(-1)
+        elif action == "faster":
+            visual.adjust_speed(1)
+        return action == "step"
+
     try:
         while running:
             elapsed = renderer.clock.tick(controller.config.fps) / 1000.0
-            accumulator += elapsed
+            visual.advance(elapsed)
+            if not visual.paused and not controller.terminated:
+                accumulator += elapsed
             single_step = False
             for event in renderer.pg.event.get():
                 if event.type == renderer.pg.QUIT:
                     running = False
                 elif event.type == renderer.pg.KEYDOWN:
-                    if event.key == renderer.pg.K_ESCAPE:
-                        running = False
-                    elif event.key == renderer.pg.K_SPACE:
-                        paused = not paused
-                    elif event.key == renderer.pg.K_n:
-                        single_step = True
-            if (not paused and accumulator >= tick_seconds) or single_step:
+                    key_actions = {
+                        renderer.pg.K_ESCAPE: "quit",
+                        renderer.pg.K_SPACE: "pause",
+                        renderer.pg.K_n: "step",
+                        renderer.pg.K_r: "reset",
+                        renderer.pg.K_g: "view",
+                        renderer.pg.K_s: "sensors",
+                        renderer.pg.K_p: "path",
+                        renderer.pg.K_o: "edit",
+                        renderer.pg.K_MINUS: "slower",
+                        renderer.pg.K_KP_MINUS: "slower",
+                        renderer.pg.K_EQUALS: "faster",
+                        renderer.pg.K_PLUS: "faster",
+                        renderer.pg.K_KP_PLUS: "faster",
+                    }
+                    action = key_actions.get(event.key)
+                    if action:
+                        single_step = apply_action(action) or single_step
+                elif event.type == renderer.pg.MOUSEBUTTONDOWN and event.button == 1:
+                    cell = renderer.map_cell_at(event.pos) if visual.edit_obstacles else None
+                    if cell is not None:
+                        visual.notify_map_edit(controller.toggle_dynamic_obstacle(cell))
+                    else:
+                        action = renderer.action_at(event.pos)
+                        if action:
+                            single_step = apply_action(action) or single_step
+
+            tick_seconds = 1.0 / (controller.config.tick_hz * visual.speed)
+            should_tick = (
+                not visual.animating
+                and not controller.terminated
+                and ((not visual.paused and accumulator >= tick_seconds) or single_step)
+            )
+            if should_tick:
                 controller.step()
+                visual.begin_transition(
+                    controller.robot,
+                    controller.heading,
+                    duration=min(0.22, tick_seconds * 0.85),
+                )
                 accumulator = 0.0
-            renderer.draw(paused=paused or controller.terminated)
+            renderer.draw(visual)
             if controller.terminated:
-                paused = True
+                visual.paused = True
     finally:
         renderer.close()
     return controller.metrics.to_dict()

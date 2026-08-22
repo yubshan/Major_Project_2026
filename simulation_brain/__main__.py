@@ -17,13 +17,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--episodes", type=int, default=1)
     parser.add_argument("--max-steps", type=int)
     parser.add_argument("--model", help="Optional Simulation Brain PPO .zip checkpoint")
+    parser.add_argument(
+        "--speed", type=float, choices=(0.25, 0.5, 1.0, 2.0), default=0.5,
+        help="Visual playback multiplier (default: 0.5 for presentations)",
+    )
     return parser
 
 
 def main() -> None:
     args = build_parser().parse_args()
     if args.mode == "visual":
-        run_visual(args.scenario, args.seed, args.model)
+        run_visual(args.scenario, args.seed, args.model, args.speed)
     else:
         run_headless(args.scenario, args.seed, args.episodes, args.max_steps, args.model)
 

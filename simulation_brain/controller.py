@@ -18,13 +18,14 @@ from modules.decision_logic.contracts import (
     PLANNED_PATH,
     PROXIMITY,
     ROBOT_POSE,
+    SIMULATION_MAP_EDIT,
     SIMULATION_METRICS,
     TARGET_WAYPOINT,
     now_ms,
 )
 from modules.navigation.occupancy_grid import OccupancyGrid
 from shared.blackboard import Blackboard
-from shared.coordinate_system import FREE, GRID_HEIGHT, GRID_WIDTH, grid_to_world
+from shared.coordinate_system import FREE, GRID_HEIGHT, GRID_WIDTH, OCCUPIED, grid_to_world
 from simulation_brain.config import SimulationConfig
 from simulation_brain.metrics import EpisodeMetrics
 from simulation_brain.planning import (
@@ -43,6 +44,14 @@ class StepResult:
     reason: str
     newly_explored: int
     detected: bool
+
+
+@dataclass(frozen=True)
+class MapEditResult:
+    accepted: bool
+    cell: Cell
+    occupied: bool | None
+    reason: str
 
 
 class SimulationController:
@@ -256,6 +265,76 @@ class SimulationController:
         if detected:
             self.metrics.victim_detections += 1
         self.blackboard.set(SIMULATION_METRICS, self.metrics.to_dict())
+
+    def set_dynamic_obstacle(self, cell: Cell, occupied: bool) -> MapEditResult:
+        """Apply a safe map edit and immediately invalidate/replan navigation."""
+        try:
+            row, col = int(cell[0]), int(cell[1])
+        except (TypeError, ValueError, IndexError):
+            return MapEditResult(False, (-1, -1), None, "invalid_cell")
+        cell = (row, col)
+        if not (0 <= row < GRID_HEIGHT and 0 <= col < GRID_WIDTH):
+            return MapEditResult(False, cell, None, "out_of_bounds")
+        if row in (0, GRID_HEIGHT - 1) or col in (0, GRID_WIDTH - 1):
+            return MapEditResult(False, cell, None, "boundary_protected")
+        if cell == self.robot:
+            return MapEditResult(False, cell, None, "robot_cell_protected")
+        if cell == self.scenario.victim:
+            return MapEditResult(False, cell, None, "victim_cell_protected")
+
+        requested_value = OCCUPIED if occupied else FREE
+        if int(self.ground_truth[cell]) == requested_value:
+            return MapEditResult(False, cell, occupied, "no_change")
+
+        self.ground_truth[cell] = requested_value
+        self.occupancy.set_cell(row, col, requested_value)
+        self.metrics.dynamic_obstacle_changes += 1
+        self._last_plan_signature = None
+
+        target = self.blackboard.get(TARGET_WAYPOINT)
+        if occupied and target is not None and tuple(target) == cell:
+            # An exploration target may disappear; victim cells are protected above.
+            self.blackboard.update_many({TARGET_WAYPOINT: None, PLANNED_PATH: []})
+            target = None
+
+        reason = "dynamic_obstacle_added" if occupied else "dynamic_obstacle_removed"
+        edit = {
+            "cell": cell,
+            "occupied": occupied,
+            "reason": reason,
+            "timestamp_ms": now_ms(),
+        }
+        self.blackboard.update_many({
+            OCCUPANCY_GRID: self.occupancy.data.copy(),
+            SIMULATION_MAP_EDIT: edit,
+        })
+        if target is not None:
+            self._plan(reason)
+        else:
+            self.blackboard.update_many({
+                PLANNED_PATH: [],
+                PATH_STATUS: {
+                    "goal": None,
+                    "effective_goal": None,
+                    "status": "awaiting_target",
+                    "cost": None,
+                    "replan_reason": reason,
+                    "timestamp_ms": now_ms(),
+                },
+            })
+        self.blackboard.set(SIMULATION_METRICS, self.metrics.to_dict())
+        return MapEditResult(True, cell, occupied, reason)
+
+    def toggle_dynamic_obstacle(self, cell: Cell) -> MapEditResult:
+        """Toggle a non-protected cell between free and occupied."""
+        try:
+            row, col = int(cell[0]), int(cell[1])
+        except (TypeError, ValueError, IndexError):
+            return MapEditResult(False, (-1, -1), None, "invalid_cell")
+        cell = (row, col)
+        if not (0 <= row < GRID_HEIGHT and 0 <= col < GRID_WIDTH):
+            return MapEditResult(False, cell, None, "out_of_bounds")
+        return self.set_dynamic_obstacle(cell, self.ground_truth[cell] != OCCUPIED)
 
     def _victim_known_unreachable(self, detected: bool) -> bool:
         if not detected or self.blackboard.get(TARGET_WAYPOINT) is None:
