@@ -27,18 +27,60 @@ Install the repository and decision dependencies, then run from the repository r
 python -m pip install -r requirements.txt
 python -m pip install -r modules/decision_logic/requirements.txt
 
-python -m simulation_brain --mode visual --scenario maze --seed 7
-python -m simulation_brain --mode headless --scenario random --seed 7 --episodes 20
-python -m simulation_brain --mode visual --model simulation_brain/models/ppo_explore.zip
+.drishya/bin/python -m simulation_brain --mode visual --scenario maze --seed 7
+.drishya/bin/python -m simulation_brain --mode headless --scenario random --seed 7 --episodes 20
+.drishya/bin/python -m simulation_brain --mode visual --model simulation_brain/models/ppo_explore.zip
 ```
 
 Available scenarios are `open-room`, `maze`, `corridor`, `blocked-route`,
-`unreachable-target`, and `random`. Visual controls are Space to pause, N to advance
-one decision tick, and Escape to quit.
+`unreachable-target`, and `random`. The visual simulator opens in Robot Perception mode
+at presentation-friendly half speed. Use `--speed 0.25`, `0.5`, `1.0`, or `2.0` to
+change the initial playback rate.
 
-The dashboard shows ground truth (evaluation only), the robot's partial occupancy map,
-sensor-driven discoveries, Dijkstra route and waypoint, active Behavior Tree behavior,
-the latest decision reason, and episode metrics.
+The single-map dashboard contains a top-down rescue rover with four wheels, ToF bar,
+ultrasonic indicators, WiFi antenna, heading marker, and behavior status light. Smooth
+movement is visual only: the controller, Behavior Tree, Dijkstra planner, and metrics
+continue to use authoritative grid cells.
+
+### Presentation controls
+
+Every action is available through an on-screen button and a keyboard shortcut:
+
+| Key | Action |
+|---|---|
+| `Space` | Run or pause |
+| `N` | Advance one decision step |
+| `R` | Reset the same scenario and seed |
+| `G` | Toggle Robot Perception and Ground Truth |
+| `S` | Show or hide ultrasonic/ToF rays |
+| `P` | Show or hide the Dijkstra path and target |
+| `O` | Toggle obstacle-editing mode; click a map cell to add/remove a wall |
+| `+` / `-` | Increase or decrease playback speed |
+| `Esc` | Exit |
+
+Robot Perception is the scientifically honest default: hidden obstacles and the victim
+remain concealed until sensed or confirmed. Ground Truth is an explicit presentation
+view and is never published to the Blackboard or RL observation.
+
+### Dynamic obstacles and replanning
+
+Press `O` or click **Edit On**, then click any interior map cell to add an obstacle.
+Click the same cell again to remove it. The editor treats the change as an observed map
+event: ground truth and occupancy are updated together, the old route is invalidated,
+and Dijkstra immediately finds a new route around the obstacle. Boundary, robot, and
+victim cells are protected. The highlighted cell, edit count, and decision message make
+the replanning event visible during a demonstration.
+
+### Suggested defense demonstration
+
+1. Start `maze` in Robot Perception view and explain that gray cells are unknown.
+2. Pause with Space and use N to show one sensor-map-decision cycle at a time.
+3. Point out cyan ultrasonic rays, purple ToF rays, the yellow Dijkstra route, and the
+   rover's heading marker.
+4. Press G briefly to compare the hidden ground truth, then return to perception.
+5. Resume and show the human-readable Behavior Tree decision and live metrics.
+6. Allow the run to finish at the Victim Rescued overlay, or use
+   `unreachable-target` to demonstrate a safe failure state.
 
 ## Decision and navigation rules
 
@@ -63,7 +105,8 @@ The simulation reads and writes the existing `mission/control`,
 `navigation/robot_pose`, `navigation/occupancy_grid`, `navigation/target_waypoint`,
 `navigation/planned_path`, `sensor/proximity`, `detection/result`, and
 `decision/trace` keys. It adds `navigation/path_status` and `simulation/metrics`.
-Ground truth and the exact hidden victim cell are deliberately excluded.
+Interactive edits are reported through `simulation/map_edit`. Ground truth and the
+exact hidden victim cell are deliberately excluded.
 
 ## Reinforcement learning
 

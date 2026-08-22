@@ -12,6 +12,7 @@ class EpisodeMetrics:
     replans: int = 0
     collisions: int = 0
     unsafe_proximity_count: int = 0
+    dynamic_obstacle_changes: int = 0
     victim_detections: int = 0
     rescued: bool = False
     termination_reason: str = "running"
