@@ -10,11 +10,15 @@ from simulation_brain.controller import SimulationController
 def run_headless(
     scenario: str, seed: int, episodes: int, max_steps: int | None = None,
     model_path: str | None = None,
+    moving_obstacle_count: int = 0,
+    moving_obstacle_interval: int = 10,
 ) -> list[dict]:
     results = []
     for episode in range(episodes):
         controller = SimulationController(
-            scenario=scenario, seed=seed + episode, model_path=model_path
+            scenario=scenario, seed=seed + episode, model_path=model_path,
+            moving_obstacle_count=moving_obstacle_count,
+            moving_obstacle_interval=moving_obstacle_interval,
         )
         metrics = controller.run(max_steps=max_steps)
         metrics.update({"episode": episode, "seed": seed + episode, "scenario": scenario})
@@ -28,11 +32,17 @@ def run_visual(
     seed: int,
     model_path: str | None = None,
     speed: float = 0.5,
+    moving_obstacle_count: int = 2,
+    moving_obstacle_interval: int = 10,
 ) -> dict:
     from simulation_brain.renderer import SimulationRenderer
     from simulation_brain.visual_state import VisualSessionState
 
-    controller = SimulationController(scenario=scenario, seed=seed, model_path=model_path)
+    controller = SimulationController(
+        scenario=scenario, seed=seed, model_path=model_path,
+        moving_obstacle_count=moving_obstacle_count,
+        moving_obstacle_interval=moving_obstacle_interval,
+    )
     renderer = SimulationRenderer(controller)
     visual = VisualSessionState.from_controller(controller, speed=speed)
     running = True
@@ -40,7 +50,11 @@ def run_visual(
 
     def reset() -> None:
         nonlocal controller, accumulator
-        controller = SimulationController(scenario=scenario, seed=seed, model_path=model_path)
+        controller = SimulationController(
+            scenario=scenario, seed=seed, model_path=model_path,
+            moving_obstacle_count=moving_obstacle_count,
+            moving_obstacle_interval=moving_obstacle_interval,
+        )
         renderer.controller = controller
         visual.reset_for(controller)
         accumulator = 0.0
@@ -65,6 +79,11 @@ def run_visual(
                 "Obstacle edit mode: click a map cell to add or remove a wall."
                 if visual.edit_obstacles else "Obstacle edit mode disabled."
             )
+            visual.notification_seconds = 3.0
+        elif action == "dynamic":
+            controller.moving_obstacles_enabled = not controller.moving_obstacles_enabled
+            state = "enabled" if controller.moving_obstacles_enabled else "paused"
+            visual.notification = f"Autonomous moving obstacles {state}."
             visual.notification_seconds = 3.0
         elif action == "slower":
             visual.adjust_speed(-1)
@@ -92,6 +111,7 @@ def run_visual(
                         renderer.pg.K_s: "sensors",
                         renderer.pg.K_p: "path",
                         renderer.pg.K_o: "edit",
+                        renderer.pg.K_d: "dynamic",
                         renderer.pg.K_MINUS: "slower",
                         renderer.pg.K_KP_MINUS: "slower",
                         renderer.pg.K_EQUALS: "faster",

@@ -97,3 +97,35 @@ def test_dynamic_obstacle_protects_robot_victim_and_boundaries():
     assert controller.set_dynamic_obstacle((0, 10), False).reason == "boundary_protected"
     assert controller.toggle_dynamic_obstacle((99, 99)).reason == "out_of_bounds"
     assert controller.metrics.dynamic_obstacle_changes == 0
+
+
+def test_moving_obstacles_are_seeded_and_deterministic():
+    first = SimulationController("open-room", seed=9, moving_obstacle_count=2)
+    second = SimulationController("open-room", seed=9, moving_obstacle_count=2)
+    assert first.moving_obstacles == second.moving_obstacles
+    assert len(first.moving_obstacles) == 2
+    assert first.advance_moving_obstacles(force=True) == 2
+    assert second.advance_moving_obstacles(force=True) == 2
+    assert first.moving_obstacles == second.moving_obstacles
+
+
+def test_moving_obstacles_trigger_safe_replanning_and_rescue():
+    controller = SimulationController(
+        "open-room", seed=7, moving_obstacle_count=2, moving_obstacle_interval=5
+    )
+    result = controller.run(max_steps=500)
+    assert result["moving_obstacle_moves"] > 0
+    assert result["rescued"] is True
+    assert result["collisions"] == 0
+    assert all(
+        cell not in controller.blackboard.get(PLANNED_PATH, [])
+        for cell in controller.moving_obstacles.values()
+    )
+
+
+def test_moving_obstacles_can_be_paused():
+    controller = SimulationController("open-room", seed=7, moving_obstacle_count=2)
+    before = dict(controller.moving_obstacles)
+    controller.moving_obstacles_enabled = False
+    assert controller.advance_moving_obstacles(force=True) == 0
+    assert controller.moving_obstacles == before

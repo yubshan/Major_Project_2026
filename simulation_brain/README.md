@@ -27,13 +27,18 @@ Install the repository and decision dependencies, then run from the repository r
 python -m pip install -r requirements.txt
 python -m pip install -r modules/decision_logic/requirements.txt
 
-.drishya/bin/python -m simulation_brain --mode visual --scenario maze --seed 7
+.drishya/bin/python -m simulation_brain --mode visual --scenario studio-apartment --seed 7
+.drishya/bin/python -m simulation_brain --mode visual --scenario maze --moving-obstacles 3 --obstacle-interval 6
 .drishya/bin/python -m simulation_brain --mode headless --scenario random --seed 7 --episodes 20
 .drishya/bin/python -m simulation_brain --mode visual --model simulation_brain/models/ppo_explore.zip
 ```
 
-Available scenarios are `open-room`, `maze`, `corridor`, `blocked-route`,
-`unreachable-target`, and `random`. The visual simulator opens in Robot Perception mode
+The six building scenarios are `studio-apartment`, `two-bedroom-house`, `office-suite`,
+`clinic-ward`, `warehouse`, and `collapsed-house`. They have fixed walls, rooms,
+doorways, corridors, and furniture, while the seed selects a reachable victim from
+room-specific candidates. The original `open-room`, `maze`, `corridor`,
+`blocked-route`, `unreachable-target`, and `random` fixtures remain available for
+regression demonstrations. The visual simulator opens in Robot Perception mode
 at presentation-friendly half speed. Use `--speed 0.25`, `0.5`, `1.0`, or `2.0` to
 change the initial playback rate.
 
@@ -55,6 +60,7 @@ Every action is available through an on-screen button and a keyboard shortcut:
 | `S` | Show or hide ultrasonic/ToF rays |
 | `P` | Show or hide the Dijkstra path and target |
 | `O` | Toggle obstacle-editing mode; click a map cell to add/remove a wall |
+| `D` | Pause or resume autonomous moving obstacles |
 | `+` / `-` | Increase or decrease playback speed |
 | `Esc` | Exit |
 
@@ -71,9 +77,24 @@ and Dijkstra immediately finds a new route around the obstacle. Boundary, robot,
 victim cells are protected. The highlighted cell, edit count, and decision message make
 the replanning event visible during a demonstration.
 
+Visual mode starts with two orange autonomous obstacles. They move one safe grid cell
+every 10 decision ticks and are tracked as observed hazards. Before each move is
+accepted, the simulator prevents entry into the robot or victim cell and verifies that
+the victim remains reachable in ground truth. The perceived grid and any affected path
+are then updated before robot motion, so Dijkstra never deliberately follows a route
+through a moving obstacle. Configure this behavior with:
+
+```bash
+.drishya/bin/python -m simulation_brain --mode visual --scenario maze \
+  --moving-obstacles 3 --obstacle-interval 6
+```
+
+Use `--moving-obstacles 0` for the original static demonstration. Headless and RL runs
+default to zero moving obstacles so established evaluation results stay comparable.
+
 ### Suggested defense demonstration
 
-1. Start `maze` in Robot Perception view and explain that gray cells are unknown.
+1. Start `two-bedroom-house` in Robot Perception view and explain that gray cells are unknown.
 2. Pause with Space and use N to show one sensor-map-decision cycle at a time.
 3. Point out cyan ultrasonic rays, purple ToF rays, the yellow Dijkstra route, and the
    rover's heading marker.
@@ -108,22 +129,71 @@ The simulation reads and writes the existing `mission/control`,
 Interactive edits are reported through `simulation/map_edit`. Ground truth and the
 exact hidden victim cell are deliberately excluded.
 
-## Reinforcement learning
+## Reinforcement-learning curriculum
 
-The Gymnasium environment uses exactly the same controller, sensing, mapping, planning,
-and termination code as the visual simulation. Its observation contains the perceived
-grid, normalized pose and heading, proximity ranges, coverage, and frontier-sector
-counts. Its four actions prefer the forward, left, backward, or right exploration sector;
-Dijkstra still validates and executes the resulting frontier route.
+Training and deployment deliberately use different action executors around the same
+house, sensor, occupancy, detection, and termination state. During training, the four
+relative actions (`forward`, `left`, `backward`, `right`) attempt the adjacent cell
+directly. A hidden wall attempt leaves the rover in place, increments collision metrics,
+and applies an escalating penalty. This gives PPO an observable collision-learning
+signal. During deployment, PPO only proposes a directional exploration preference;
+the Behavior Tree, known-free collision check, and Dijkstra planner retain final motion
+authority.
+
+The versioned `house-rescue-v2` observation has 2,517 values: the perceived 50×50 grid,
+pose and heading, five ranges, coverage, four frontier counts, detection confidence,
+two victim-relative values, and the previous-collision flag. Victim-relative values are
+exactly zero until WiFi confidence confirms the victim. Older 2,513-value checkpoints
+are rejected with a retraining message and deployment safely falls back to the frontier
+heuristic.
+
+Train the same PPO model from the simplest house through the most difficult one, then
+fine-tune it on a deterministic mixed-house rotation:
 
 ```bash
-python -m simulation_brain.rl.train_ppo --timesteps 100000 --seed 7
-python -m simulation_brain.rl.evaluate --episodes 10 --seed 7
-python -m simulation_brain.rl.evaluate --model simulation_brain/models/ppo_explore.zip
+.drishya/bin/python -m simulation_brain.rl.train_ppo \
+  --preset quick --seed 7 --dashboard
+
+.drishya/bin/python -m simulation_brain.rl.train_ppo \
+  --preset full --seed 7 --dashboard \
+  --resume simulation_brain/models/latest.zip
 ```
 
-Rewards favor new cells, detection, and rescue and penalize time, revisits, and
-collisions. Stable-Baselines3 and a checkpoint are optional for the normal demo.
+`quick` uses 5,000 timesteps per house plus 10,000 mixed timesteps. `full` uses 50,000
+per house plus 100,000 mixed timesteps. A checkpoint is written after each stage,
+along with `latest.zip` and `house_rescue_final.zip`. Closing the Pygame training
+dashboard only disables drawing; training continues headlessly.
+
+Rewards are `+0.05` per newly observed cell, `+25` on first confirmation, `+0.5` per
+cell of confirmed-victim progress, and `+100` for rescue. Costs are `-0.02` per step,
+`-0.1` for no discovery, `-8` plus an escalating repeat cost per collision, and `-10`
+at timeout.
+
+Evaluate random, deterministic-frontier, and trained PPO policies on both the training
+victim seeds and unseen victim seeds:
+
+```bash
+.drishya/bin/python -m simulation_brain.rl.evaluate \
+  --model simulation_brain/models/house_rescue_final.zip \
+  --suite houses --episodes-per-scenario 20
+```
+
+The evaluator and trainer create dependency-free CSV, JSON, and self-contained HTML/SVG
+reports under `simulation_brain/reports/`. Per-house tables compare measured first and
+final episode windows without claiming a guaranteed improvement percentage.
+
+Replay an early random episode and a trained episode on the identical house and seed:
+
+```bash
+.drishya/bin/python -m simulation_brain.rl.replay \
+  --scenario two-bedroom-house --policy random --seed 7
+
+.drishya/bin/python -m simulation_brain.rl.replay \
+  --scenario two-bedroom-house \
+  --model simulation_brain/models/house_rescue_final.zip --seed 7
+```
+
+Stable-Baselines3 and a trained checkpoint remain optional for the normal demonstration.
 
 ## Metrics and tests
 
@@ -134,6 +204,6 @@ count, rescue status, termination reason, elapsed time, and policy source.
 python -m pytest simulation_brain/tests modules/decision_logic/tests -v
 ```
 
-Version 1 intentionally models one robot and static obstacles. Fire, flood, structural
-collapse, chemical hazards, genetic optimization, hardware-in-the-loop operation, and
-multi-robot game theory remain later extensions.
+Version 1 intentionally models one robot, walls, furniture, rubble, and optional moving
+obstacles. Fire, flood, chemical hazards, genetic optimization, hardware-in-the-loop
+operation, and multi-robot game theory remain later extensions.

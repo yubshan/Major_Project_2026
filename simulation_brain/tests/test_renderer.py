@@ -67,6 +67,7 @@ def test_pygame_renderer_smoke(monkeypatch):
     renderer.draw(visual)
     assert renderer.action_at(renderer.button_rects["pause"].center) == "pause"
     assert renderer.action_at(renderer.button_rects["edit"].center) == "edit"
+    assert renderer.action_at(renderer.button_rects["dynamic"].center) == "dynamic"
     assert renderer.map_cell_at(renderer._cell_center(10, 12)) == (10, 12)
     assert renderer.map_cell_at((0, 0)) is None
     renderer.close()
@@ -93,5 +94,10 @@ def test_perception_view_hides_truth_and_victim(monkeypatch):
 def test_visual_cli_accepts_presentation_speed():
     from simulation_brain.__main__ import build_parser
 
-    args = build_parser().parse_args(["--mode", "visual", "--speed", "1.0"])
+    args = build_parser().parse_args([
+        "--mode", "visual", "--speed", "1.0",
+        "--moving-obstacles", "3", "--obstacle-interval", "6",
+    ])
     assert args.speed == 1.0
+    assert args.moving_obstacles == 3
+    assert args.obstacle_interval == 6

@@ -5,7 +5,9 @@ from __future__ import annotations
 import math
 from typing import Iterable
 
-from modules.decision_logic.contracts import DETECTION_RESULT, PATH_STATUS, PROXIMITY
+from modules.decision_logic.contracts import (
+    DETECTION_RESULT, PATH_STATUS, PROXIMITY, SIMULATION_MAP_EDIT, now_ms,
+)
 from shared.coordinate_system import FREE, GRID_HEIGHT, GRID_WIDTH, OCCUPIED, UNKNOWN
 from simulation_brain.visual_state import VisualPose, VisualSessionState
 
@@ -137,6 +139,21 @@ class SimulationRenderer:
         for row, col in visual.visited:
             self.pg.draw.circle(self.screen, self.COLORS["visited"], self._cell_center(row, col), radius)
 
+    def _draw_moving_obstacles(self) -> None:
+        for obstacle_id, (row, col) in self.controller.moving_obstacles.items():
+            outer = self.pg.Rect(
+                self.map_origin[0] + col * self.cell,
+                self.map_origin[1] + row * self.cell,
+                self.cell,
+                self.cell,
+            )
+            inner = outer.inflate(-max(2, self.cell // 4), -max(2, self.cell // 4))
+            self.pg.draw.rect(self.screen, (244, 132, 55), outer, border_radius=2)
+            self.pg.draw.rect(self.screen, (255, 210, 100), inner, 1, border_radius=2)
+            if self.cell >= 10:
+                self.pg.draw.line(self.screen, (90, 48, 32), outer.topleft, outer.bottomright, 1)
+                self.pg.draw.line(self.screen, (90, 48, 32), outer.topright, outer.bottomleft, 1)
+
     def _draw_detection_radius(self, pose: VisualPose) -> None:
         radius = int(self.controller.config.victim_detection_range_cells * self.cell)
         center = self._cell_center(pose.row, pose.col)
@@ -220,6 +237,16 @@ class SimulationRenderer:
     def _human_message(self, visual: VisualSessionState) -> str:
         if visual.notification:
             return visual.notification
+        map_event = self.controller.blackboard.get(SIMULATION_MAP_EDIT, {})
+        if (
+            isinstance(map_event, dict)
+            and map_event.get("reason") == "moving_obstacle_moved"
+            and now_ms() - map_event.get("timestamp_ms", 0) <= 1_500
+        ):
+            return (
+                f"Moving obstacle {map_event.get('id')} shifted to {map_event.get('cell')}; "
+                "Dijkstra checked the route again."
+            )
         if self.controller.terminated:
             return {
                 "victim_rescued": "Victim reached safely. Mission complete.",
@@ -253,8 +280,8 @@ class SimulationRenderer:
         self._text("RESCUE ROVER", x, y, color=self.COLORS["accent"], font=self.title_font)
         y += 34
         self._text(
-            f"{self.controller.scenario.name}  •  seed {self.controller.seed}  •  edits {self.controller.metrics.dynamic_obstacle_changes}",
-            x, y, color=self.COLORS["muted"], font=self.small,
+            f"{self.controller.scenario.name} • seed {self.controller.seed} • edits {self.controller.metrics.dynamic_obstacle_changes} • moves {self.controller.metrics.moving_obstacle_moves}",
+            x, y, color=self.COLORS["muted"], font=self.tiny,
         )
         y += 30
         state = self.controller.blackboard.get("decision/state", {})
@@ -288,7 +315,7 @@ class SimulationRenderer:
             self._text(line, x, y, font=self.small)
             y += 18
         self._draw_controls(visual, x, max(y + 8, rect.bottom - 142))
-        self._text("Keys: Space/N/R/G/S/P/O  •  +/- speed", x, rect.bottom - 20, color=self.COLORS["muted"], font=self.tiny)
+        self._text("Keys: Space/N/R/G/S/P/O/D  •  +/- speed", x, rect.bottom - 20, color=self.COLORS["muted"], font=self.tiny)
 
     def _draw_controls(self, visual: VisualSessionState, x: int, y: int) -> None:
         controls = (
@@ -297,13 +324,17 @@ class SimulationRenderer:
             ("sensors", f"Sensors {'On' if visual.show_sensors else 'Off'}"),
             ("path", f"Path {'On' if visual.show_path else 'Off'}"),
             ("edit", f"Edit {'On' if visual.edit_obstacles else 'Off'}"),
+            ("dynamic", f"Moving {'On' if self.controller.moving_obstacles_enabled else 'Off'}"),
             ("slower", "Speed -"), ("faster", f"Speed + {visual.speed:g}x"),
         )
         available, gap = self.dashboard_rect.width - 32, 6
-        button_width = (available - 2 * gap) // 3
+        columns = 5 if self.dashboard_rect.width >= 420 else 3
+        rows = math.ceil(len(controls) / columns)
+        y = max(y, self.dashboard_rect.bottom - rows * 34 - 35)
+        button_width = (available - (columns - 1) * gap) // columns
         self.button_rects = {}
         for index, (action, label) in enumerate(controls):
-            row, col = divmod(index, 3)
+            row, col = divmod(index, columns)
             rect = self.pg.Rect(x + col * (button_width + gap), y + row * 34, button_width, 28)
             self.button_rects[action] = rect
             self.pg.draw.rect(self.screen, (48, 60, 78), rect, border_radius=6)
@@ -317,6 +348,7 @@ class SimulationRenderer:
             ("Free", self.COLORS["free"]), ("Obstacle", self.COLORS["occupied"]),
             ("Unknown", self.COLORS["unknown"]), ("Dijkstra path", self.COLORS["path"]),
             ("Sensor rays", self.COLORS["sensor"]), ("Victim", self.COLORS["victim"]),
+            ("Moving hazard", (244, 132, 55)),
         )
         x = self.map_origin[0]
         for label, color in items:
@@ -391,6 +423,7 @@ class SimulationRenderer:
         self._draw_map(visual)
         map_clip = self.pg.Rect(*self.map_origin, self.map_pixels, self.map_pixels)
         self.screen.set_clip(map_clip)
+        self._draw_moving_obstacles()
         self._draw_visited(visual)
         self._draw_detection_radius(pose)
         self._draw_sensors(visual, pose)
