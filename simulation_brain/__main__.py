@@ -12,7 +12,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--scenario",
         choices=SCENARIO_NAMES,
-        default="studio-apartment",
+        default="two-bedroom-house",
     )
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--episodes", type=int, default=1)
@@ -30,6 +30,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--obstacle-interval", type=int, default=10,
         help="Decision ticks between moving-obstacle updates (default: 10)",
     )
+    parser.add_argument(
+        "--presentation", action="store_true",
+        help="Start paused with the guided midterm-presentation overlay",
+    )
     return parser
 
 
@@ -37,11 +41,11 @@ def main() -> None:
     args = build_parser().parse_args()
     moving_obstacles = args.moving_obstacles
     if moving_obstacles is None:
-        moving_obstacles = 2 if args.mode == "visual" else 0
+        moving_obstacles = 0 if args.presentation or args.mode == "headless" else 2
     if args.mode == "visual":
         run_visual(
             args.scenario, args.seed, args.model, args.speed,
-            moving_obstacles, args.obstacle_interval,
+            moving_obstacles, args.obstacle_interval, args.presentation,
         )
     else:
         run_headless(

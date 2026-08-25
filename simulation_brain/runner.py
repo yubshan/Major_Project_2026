@@ -34,6 +34,7 @@ def run_visual(
     speed: float = 0.5,
     moving_obstacle_count: int = 2,
     moving_obstacle_interval: int = 10,
+    presentation: bool = False,
 ) -> dict:
     from simulation_brain.renderer import SimulationRenderer
     from simulation_brain.visual_state import VisualSessionState
@@ -44,7 +45,9 @@ def run_visual(
         moving_obstacle_interval=moving_obstacle_interval,
     )
     renderer = SimulationRenderer(controller)
-    visual = VisualSessionState.from_controller(controller, speed=speed)
+    visual = VisualSessionState.from_controller(
+        controller, speed=speed, presentation_mode=presentation,
+    )
     running = True
     accumulator = 0.0
 
@@ -63,8 +66,16 @@ def run_visual(
         nonlocal running
         if action == "quit":
             running = False
+        elif action == "start":
+            visual.show_intro = False
+            visual.show_guide = False
+            visual.paused = False
         elif action == "pause":
-            visual.paused = not visual.paused
+            if visual.show_intro:
+                visual.show_intro = False
+                visual.paused = False
+            else:
+                visual.paused = not visual.paused
         elif action == "reset":
             reset()
         elif action == "view":
@@ -81,10 +92,22 @@ def run_visual(
             )
             visual.notification_seconds = 3.0
         elif action == "dynamic":
-            controller.moving_obstacles_enabled = not controller.moving_obstacles_enabled
-            state = "enabled" if controller.moving_obstacles_enabled else "paused"
-            visual.notification = f"Autonomous moving obstacles {state}."
+            if not controller.moving_obstacles:
+                created = controller.spawn_moving_obstacles(1)
+                controller.moving_obstacles_enabled = bool(created)
+                visual.notification = (
+                    "Autonomous hazard added; its motion will trigger safe replanning."
+                    if created else "No safe location is available for a moving hazard."
+                )
+            else:
+                controller.moving_obstacles_enabled = not controller.moving_obstacles_enabled
+                state = "enabled" if controller.moving_obstacles_enabled else "paused"
+                visual.notification = f"Autonomous moving obstacles {state}."
             visual.notification_seconds = 3.0
+        elif action == "guide":
+            visual.show_guide = not visual.show_guide
+            visual.show_intro = False
+            visual.paused = visual.show_guide or visual.paused
         elif action == "slower":
             visual.adjust_speed(-1)
         elif action == "faster":
@@ -104,7 +127,9 @@ def run_visual(
                 elif event.type == renderer.pg.KEYDOWN:
                     key_actions = {
                         renderer.pg.K_ESCAPE: "quit",
+                        renderer.pg.K_RETURN: "start",
                         renderer.pg.K_SPACE: "pause",
+                        renderer.pg.K_h: "guide",
                         renderer.pg.K_n: "step",
                         renderer.pg.K_r: "reset",
                         renderer.pg.K_g: "view",

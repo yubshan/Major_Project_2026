@@ -97,7 +97,18 @@ def test_visual_cli_accepts_presentation_speed():
     args = build_parser().parse_args([
         "--mode", "visual", "--speed", "1.0",
         "--moving-obstacles", "3", "--obstacle-interval", "6",
+        "--presentation",
     ])
     assert args.speed == 1.0
     assert args.moving_obstacles == 3
     assert args.obstacle_interval == 6
+    assert args.presentation is True
+
+
+def test_presentation_mode_starts_paused_with_intro():
+    controller = SimulationController("two-bedroom-house", seed=7)
+    visual = VisualSessionState.from_controller(controller, presentation_mode=True)
+    assert visual.paused is True
+    assert visual.show_intro is True
+    visual.reset_for(controller)
+    assert visual.show_intro is True

@@ -43,6 +43,34 @@ ABSTRACT_SCENARIOS = (
 )
 SCENARIO_NAMES = HOUSE_SCENARIOS + ABSTRACT_SCENARIOS
 
+# Renderer-only semantic anchors. They make the fixed structures readable during
+# a defense without publishing architectural labels to the Blackboard or policy.
+HOUSE_ROOM_ANNOTATIONS: dict[str, tuple[tuple[str, Cell], ...]] = {
+    "studio-apartment": (
+        ("LIVING / SLEEPING", (12, 17)), ("KITCHEN", (40, 23)), ("BATH", (10, 41)),
+    ),
+    "two-bedroom-house": (
+        ("BEDROOM 1", (11, 8)), ("BEDROOM 2", (11, 26)), ("BATH", (10, 42)),
+        ("LIVING", (34, 24)), ("KITCHEN", (40, 43)), ("HALL", (21, 25)),
+    ),
+    "office-suite": (
+        ("LOBBY", (7, 20)), ("OFFICES", (8, 43)), ("CUBICLES", (26, 26)),
+        ("MEETING", (42, 25)), ("OFFICE", (42, 43)),
+    ),
+    "clinic-ward": (
+        ("RECEPTION", (8, 8)), ("TREATMENT", (8, 23)), ("STORAGE", (8, 41)),
+        ("WARD", (29, 25)), ("PASSAGE", (43, 25)),
+    ),
+    "warehouse": (
+        ("LOADING", (6, 25)), ("SHELVING AISLES", (27, 25)),
+        ("STORAGE", (44, 25)),
+    ),
+    "collapsed-house": (
+        ("DAMAGED ROOM", (8, 8)), ("RUBBLE", (9, 27)),
+        ("LIVING", (27, 27)), ("DETOUR", (44, 27)),
+    ),
+}
+
 
 def _empty_room() -> np.ndarray:
     grid = np.full((GRID_HEIGHT, GRID_WIDTH), FREE, dtype=np.int8)

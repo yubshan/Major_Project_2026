@@ -28,6 +28,7 @@ python -m pip install -r requirements.txt
 python -m pip install -r modules/decision_logic/requirements.txt
 
 .drishya/bin/python -m simulation_brain --mode visual --scenario studio-apartment --seed 7
+.drishya/bin/python -m simulation_brain --mode visual --scenario two-bedroom-house --seed 7 --presentation
 .drishya/bin/python -m simulation_brain --mode visual --scenario maze --moving-obstacles 3 --obstacle-interval 6
 .drishya/bin/python -m simulation_brain --mode headless --scenario random --seed 7 --episodes 20
 .drishya/bin/python -m simulation_brain --mode visual --model simulation_brain/models/ppo_explore.zip
@@ -42,6 +43,28 @@ regression demonstrations. The visual simulator opens in Robot Perception mode
 at presentation-friendly half speed. Use `--speed 0.25`, `0.5`, `1.0`, or `2.0` to
 change the initial playback rate.
 
+### Midterm presentation mode
+
+Use the curated presentation entry point:
+
+```bash
+.drishya/bin/python -m simulation_brain \
+  --mode visual --scenario two-bedroom-house --seed 7 --presentation
+```
+
+It opens paused on a short project briefing. Press `Enter` to begin the autonomous
+mission. The main dashboard then shows the live `Sense → Map → BT → Dijkstra → Move`
+pipeline, WiFi confidence, current behavior, path cost, coverage, replans, and
+collisions. Ground Truth view adds unobtrusive room labels so the fixed house structure
+is easy to explain; Robot Perception remains the honest default and does not receive
+those labels or hidden geometry.
+
+Presentation mode starts without moving hazards so the core system story remains
+clear. Demonstrate replanning with `O` and a mouse click, press `D` to add one autonomous
+hazard, or launch with `--moving-obstacles 1`. Press `H` at any time for the built-in four-minute
+defense guide. This simulation intentionally presents the software intelligence layer;
+hardware integration, physical sensor calibration, and field testing remain later work.
+
 The single-map dashboard contains a top-down rescue rover with four wheels, ToF bar,
 ultrasonic indicators, WiFi antenna, heading marker, and behavior status light. Smooth
 movement is visual only: the controller, Behavior Tree, Dijkstra planner, and metrics
@@ -54,6 +77,7 @@ Every action is available through an on-screen button and a keyboard shortcut:
 | Key | Action |
 |---|---|
 | `Space` | Run or pause |
+| `Enter` | Start the guided presentation mission |
 | `N` | Advance one decision step |
 | `R` | Reset the same scenario and seed |
 | `G` | Toggle Robot Perception and Ground Truth |
@@ -61,6 +85,7 @@ Every action is available through an on-screen button and a keyboard shortcut:
 | `P` | Show or hide the Dijkstra path and target |
 | `O` | Toggle obstacle-editing mode; click a map cell to add/remove a wall |
 | `D` | Pause or resume autonomous moving obstacles |
+| `H` | Show or hide the midterm presentation guide |
 | `+` / `-` | Increase or decrease playback speed |
 | `Esc` | Exit |
 
