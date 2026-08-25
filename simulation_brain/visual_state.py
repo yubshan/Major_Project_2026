@@ -41,6 +41,7 @@ class VisualSessionState:
     presentation_mode: bool = False
     show_intro: bool = False
     show_guide: bool = False
+    show_rl_glimpse: bool = False
 
     @classmethod
     def from_controller(
@@ -95,6 +96,7 @@ class VisualSessionState:
         self.paused = self.presentation_mode
         self.show_intro = self.presentation_mode
         self.show_guide = False
+        self.show_rl_glimpse = False
         self.notification = "Scenario reset with the same seed."
         self.notification_seconds = 2.5
         self.last_edited_cell = None

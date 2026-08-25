@@ -14,7 +14,10 @@ def build_parser() -> argparse.ArgumentParser:
         choices=SCENARIO_NAMES,
         default="two-bedroom-house",
     )
-    parser.add_argument("--seed", type=int, default=7)
+    parser.add_argument(
+        "--seed", type=int,
+        help="Scenario seed (default: 4 in presentation mode, otherwise 7)",
+    )
     parser.add_argument("--episodes", type=int, default=1)
     parser.add_argument("--max-steps", type=int)
     parser.add_argument("--model", help="Optional Simulation Brain PPO .zip checkpoint")
@@ -37,19 +40,26 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main() -> None:
-    args = build_parser().parse_args()
+def resolve_runtime_defaults(args: argparse.Namespace) -> tuple[int, int]:
+    """Resolve mode-sensitive defaults while preserving explicit CLI overrides."""
+    seed = args.seed if args.seed is not None else (4 if args.presentation else 7)
     moving_obstacles = args.moving_obstacles
     if moving_obstacles is None:
         moving_obstacles = 0 if args.presentation or args.mode == "headless" else 2
+    return seed, moving_obstacles
+
+
+def main() -> None:
+    args = build_parser().parse_args()
+    seed, moving_obstacles = resolve_runtime_defaults(args)
     if args.mode == "visual":
         run_visual(
-            args.scenario, args.seed, args.model, args.speed,
+            args.scenario, seed, args.model, args.speed,
             moving_obstacles, args.obstacle_interval, args.presentation,
         )
     else:
         run_headless(
-            args.scenario, args.seed, args.episodes, args.max_steps, args.model,
+            args.scenario, seed, args.episodes, args.max_steps, args.model,
             moving_obstacles, args.obstacle_interval,
         )
 

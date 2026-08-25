@@ -16,6 +16,7 @@ class EpisodeMetrics:
     moving_obstacle_moves: int = 0
     victim_detections: int = 0
     rescued: bool = False
+    signal_transmitted: bool = False
     termination_reason: str = "running"
     policy_source: str = "heuristic"
     started_at: float = 0.0

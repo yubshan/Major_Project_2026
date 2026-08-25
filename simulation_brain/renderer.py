@@ -6,7 +6,8 @@ import math
 from typing import Iterable
 
 from modules.decision_logic.contracts import (
-    DETECTION_RESULT, PATH_STATUS, PROXIMITY, SIMULATION_MAP_EDIT, now_ms,
+    DETECTION_RESULT, PATH_STATUS, PROXIMITY, SIMULATION_MAP_EDIT,
+    SIMULATION_RESCUE_SIGNAL, now_ms,
 )
 from shared.coordinate_system import FREE, GRID_HEIGHT, GRID_WIDTH, OCCUPIED, UNKNOWN
 from simulation_brain.scenarios import HOUSE_ROOM_ANNOTATIONS
@@ -248,6 +249,16 @@ class SimulationRenderer:
         rotated = self.pg.transform.rotozoom(surface, pose.heading, 1.0)
         self.screen.blit(rotated, rotated.get_rect(center=self._cell_center(pose.row, pose.col)))
 
+    def _draw_signal_pulse(self, pose: VisualPose) -> None:
+        signal = self.controller.blackboard.get(SIMULATION_RESCUE_SIGNAL, {})
+        if not isinstance(signal, dict) or not signal.get("sent"):
+            return
+        center = self._cell_center(pose.row, pose.col)
+        phase = (self.pg.time.get_ticks() % 1_200) / 1_200.0
+        for offset in (0.0, 0.33, 0.66):
+            radius = max(5, int(self.cell * (0.7 + ((phase + offset) % 1.0) * 2.2)))
+            self.pg.draw.circle(self.screen, self.COLORS["success"], center, radius, 1)
+
     def _human_message(self, visual: VisualSessionState) -> str:
         if visual.notification:
             return visual.notification
@@ -263,7 +274,7 @@ class SimulationRenderer:
             )
         if self.controller.terminated:
             return {
-                "victim_rescued": "Victim reached safely. Mission complete.",
+                "victim_rescued": "Victim located safely; rescue coordinates transmitted.",
                 "victim_unreachable": "Victim confirmed, but every safe approach is blocked.",
                 "map_fully_explored": "Exploration complete. No reachable mission target remains.",
                 "step_limit": "Time limit reached. Robot stopped safely.",
@@ -309,6 +320,62 @@ class SimulationRenderer:
             text = self.tiny.render(label, True, text_color)
             self.screen.blit(text, text.get_rect(center=rect.center))
 
+    def behavior_tree_rows(self) -> tuple[tuple[str, str, bool], ...]:
+        """Return presentation labels for the real priority-selector branches."""
+        state = self.controller.blackboard.get("decision/state", {})
+        active_behavior = state.get("active_behavior", "")
+        detection = self.controller.blackboard.get(DETECTION_RESULT, {})
+        confidence = float(detection.get("confidence", 0.0)) if isinstance(detection, dict) else 0.0
+        confirmed = confidence >= self.controller.config.victim_confirm_threshold
+        has_target = self.controller.blackboard.get("navigation/target_waypoint") is not None
+        policy_loaded = self.controller._policy is not None
+        definitions = (
+            ("Safety Gate", "SafetyGate", "HOLD", "CLEAR"),
+            ("Emergency Stop", "EmergencyStop", "STOP", "CLEAR"),
+            ("Victim Confirmation", "VictimConfirmation", "CONFIRMING", "CONFIRMED" if confirmed else "WAIT"),
+            ("Navigate to Target", "NavigateToTarget", "RUNNING", "READY" if has_target else "WAIT"),
+            (
+                "Explore / RL-ready", "RLExplore",
+                "PPO RUNNING" if policy_loaded else "HEURISTIC FALLBACK",
+                "PPO READY" if policy_loaded else "HEURISTIC READY",
+            ),
+            ("Idle", "Idle", "IDLE", "STANDBY"),
+        )
+        return tuple(
+            (label, active_status if active_behavior == behavior else inactive_status, active_behavior == behavior)
+            for label, behavior, active_status, inactive_status in definitions
+        )
+
+    def rl_policy_status(self) -> str:
+        if self.controller._policy is not None:
+            return "TRAINED PPO LOADED"
+        if self.controller.policy_load_error:
+            return "CHECKPOINT REJECTED — SAFE HEURISTIC FALLBACK"
+        return "NOT TRAINED — DETERMINISTIC FRONTIER HEURISTIC ACTIVE"
+
+    def _draw_behavior_tree(self, x: int, y: int, width: int) -> int:
+        self._text("BEHAVIOR TREE — PRIORITY SELECTOR", x, y, color=self.COLORS["warning"], font=self.tiny)
+        y += 17
+        row_height = 22
+        for index, (label, status, active) in enumerate(self.behavior_tree_rows(), start=1):
+            rect = self.pg.Rect(x + 13, y, width - 13, row_height - 2)
+            fill = self.COLORS["accent"] if active else (43, 53, 69)
+            self.pg.draw.rect(self.screen, fill, rect, border_radius=4)
+            self.pg.draw.line(
+                self.screen, self.COLORS["border"],
+                (x + 5, y - (2 if index > 1 else 0)), (x + 5, y + row_height // 2), 2,
+            )
+            self.pg.draw.line(
+                self.screen, self.COLORS["border"],
+                (x + 5, y + row_height // 2), (x + 13, y + row_height // 2), 2,
+            )
+            text_color = (18, 25, 32) if active else self.COLORS["text"]
+            self._text(f"{index}. {label}", rect.x + 7, rect.y + 3, color=text_color, font=self.tiny)
+            status_surface = self.tiny.render(status, True, text_color if active else self.COLORS["muted"])
+            self.screen.blit(status_surface, (rect.right - status_surface.get_width() - 7, rect.y + 3))
+            y += row_height
+        return y
+
     def _draw_dashboard(self, visual: VisualSessionState) -> None:
         rect = self.dashboard_rect
         self.pg.draw.rect(self.screen, self.COLORS["panel"], rect, border_radius=12)
@@ -317,30 +384,23 @@ class SimulationRenderer:
         self._text("RESCUE ROVER", x, y, color=self.COLORS["accent"], font=self.title_font)
         y += 34
         self._text(
-            f"{self.controller.scenario.name} • seed {self.controller.seed} • step {self.controller.metrics.steps}",
+            f"{self.controller.scenario.name} • seed {self.controller.seed} • "
+            f"step {self.controller.metrics.steps} • replans {self.controller.metrics.replans}",
             x, y, color=self.COLORS["muted"], font=self.tiny,
         )
         y += 20
         self._draw_system_pipeline(x, y, rect.width - 32)
         y += 37
-        state = self.controller.blackboard.get("decision/state", {})
+        y = self._draw_behavior_tree(x, y, rect.width - 32)
+        y += 7
         path_status = self.controller.blackboard.get(PATH_STATUS, {})
         metrics = self.controller.metrics.to_dict()
         detection = self.controller.blackboard.get(DETECTION_RESULT, {})
         confidence = float(detection.get("confidence", 0.0)) if isinstance(detection, dict) else 0.0
-        mission_value = (
-            "RESCUED" if self.controller.metrics.rescued
-            else "STOPPED" if self.controller.terminated
-            else state.get("mission_state", "run").upper()
-        )
         values = (
-            ("Mission", mission_value, self._status_color()),
-            ("Behavior", state.get("active_behavior", "Sensing"), None),
-            ("Policy", metrics["policy_source"].upper(), None),
             ("WiFi signal", f"{confidence:.0%}", self.COLORS["victim"] if confidence >= self.controller.config.victim_confirm_threshold else None),
-            ("Path cost", path_status.get("cost", "—"), self.COLORS["path"]),
             ("Coverage", f"{metrics['coverage_pct']:.1f}%", None),
-            ("Replans", metrics["replans"], None),
+            ("Path cost", path_status.get("cost", "—"), self.COLORS["path"]),
             ("Collisions", metrics["collisions"], self.COLORS["success"] if not metrics["collisions"] else self.COLORS["danger"]),
         )
         gap, card_height = 7, 47
@@ -349,30 +409,40 @@ class SimulationRenderer:
             row, col = divmod(index, 2)
             card = self.pg.Rect(x + col * (card_width + gap), y + row * (card_height + gap), card_width, card_height)
             self._card(card, label, value, accent)
-        y += 4 * (card_height + gap) + 1
+        y += 2 * (card_height + gap) + 1
         self._text("CURRENT DECISION", x, y, color=self.COLORS["warning"], font=self.small)
         y += 20
         for line in self._wrap(self._human_message(visual), max(24, (rect.width - 32) // 8))[:3]:
             self._text(line, x, y, font=self.small)
             y += 18
         self._draw_controls(visual, x, max(y + 8, rect.bottom - 142))
-        self._text("Keys: Space/N/R/G/S/P/O/D/H  •  +/- speed", x, rect.bottom - 20, color=self.COLORS["muted"], font=self.tiny)
+        footer = (
+            "Keys: Enter/Space/N/R/G/H/L  •  Advanced: S/P/O/D +/-"
+            if visual.presentation_mode else "Keys: Space/N/R/G/S/P/O/D/H/L  •  +/- speed"
+        )
+        self._text(footer, x, rect.bottom - 20, color=self.COLORS["muted"], font=self.tiny)
 
     def _draw_controls(self, visual: VisualSessionState, x: int, y: int) -> None:
-        controls = [
-            ("pause", "Run" if visual.paused else "Pause"), ("step", "Step"),
-            ("reset", "Reset"), ("view", "Truth" if visual.view_mode == "perception" else "Perception"),
-            ("sensors", f"Sensors {'On' if visual.show_sensors else 'Off'}"),
-            ("path", f"Path {'On' if visual.show_path else 'Off'}"),
-            ("edit", f"Edit {'On' if visual.edit_obstacles else 'Off'}"),
-            ("dynamic", (
-                f"Moving {'On' if self.controller.moving_obstacles_enabled else 'Off'}"
-                if self.controller.moving_obstacles else "Add Hazard"
-            )),
-            ("slower", "Speed -"), ("faster", f"Speed + {visual.speed:g}x"),
-        ]
         if visual.presentation_mode:
-            controls.append(("guide", "Guide"))
+            controls = [
+                ("pause", "Run" if visual.paused else "Pause"), ("step", "Step"),
+                ("reset", "Reset"),
+                ("view", "Truth" if visual.view_mode == "perception" else "Perception"),
+                ("guide", "Guide"), ("rl", "RL Glimpse"),
+            ]
+        else:
+            controls = [
+                ("pause", "Run" if visual.paused else "Pause"), ("step", "Step"),
+                ("reset", "Reset"), ("view", "Truth" if visual.view_mode == "perception" else "Perception"),
+                ("sensors", f"Sensors {'On' if visual.show_sensors else 'Off'}"),
+                ("path", f"Path {'On' if visual.show_path else 'Off'}"),
+                ("edit", f"Edit {'On' if visual.edit_obstacles else 'Off'}"),
+                ("dynamic", (
+                    f"Moving {'On' if self.controller.moving_obstacles_enabled else 'Off'}"
+                    if self.controller.moving_obstacles else "Add Hazard"
+                )),
+                ("slower", "Speed -"), ("faster", f"Speed + {visual.speed:g}x"),
+            ]
         available, gap = self.dashboard_rect.width - 32, 6
         columns = 5 if self.dashboard_rect.width >= 420 else 3
         rows = math.ceil(len(controls) / columns)
@@ -415,8 +485,15 @@ class SimulationRenderer:
         self.screen.blit(overlay, (x, y))
         success = self.controller.metrics.rescued
         color = self.COLORS["success"] if success else self.COLORS["warning"]
-        title = "VICTIM RESCUED" if success else self.controller.metrics.termination_reason.replace("_", " ").upper()
+        title = (
+            "VICTIM LOCATED — SIGNAL TRANSMITTED"
+            if success and self.controller.metrics.signal_transmitted
+            else "VICTIM REACHED"
+            if success else self.controller.metrics.termination_reason.replace("_", " ").upper()
+        )
         title_surface = self.title_font.render(title, True, color)
+        if title_surface.get_width() > self.map_pixels - 30:
+            title_surface = self.heading_font.render(title, True, color)
         center_x, center_y = x + self.map_pixels // 2, y + self.map_pixels // 2
         self.screen.blit(title_surface, title_surface.get_rect(center=(center_x, center_y - 20)))
         metrics = self.controller.metrics
@@ -430,7 +507,7 @@ class SimulationRenderer:
         self.screen.blit(subtitle, subtitle.get_rect(center=(center_x, center_y + 48)))
 
     def _draw_presentation_overlay(self, visual: VisualSessionState) -> None:
-        if not (visual.show_intro or visual.show_guide):
+        if not (visual.show_intro or visual.show_guide or visual.show_rl_glimpse):
             return
         shade = self.pg.Surface((self.width, self.height), self.pg.SRCALPHA)
         shade.fill((7, 12, 20, 218))
@@ -450,30 +527,51 @@ class SimulationRenderer:
         if visual.show_intro:
             content = (
                 "MISSION", "An autonomous rescue rover explores an unknown building, avoids obstacles,",
-                "finds a hidden victim from simulated WiFi evidence, and reaches them safely.", "",
+                "finds a hidden victim from simulated WiFi evidence, reaches them safely, and",
+                "transmits their confirmed location to the rescue team.", "",
                 "SYSTEM BOUNDARY", "This demonstration validates perception, mapping, decisions, Dijkstra",
                 "navigation, dynamic replanning, and RL readiness. Hardware comes later.", "",
                 "WHAT TO WATCH", "Gray space becomes mapped • cyan/purple rays are sensors • yellow is the",
                 "safe path • the dashboard explains every Behavior Tree decision.",
             )
-        else:
+        elif visual.show_guide:
             content = (
                 "RECOMMENDED 4-MINUTE FLOW", "1. Enter — start in honest Robot Perception view.",
                 "2. Space then N — explain one sense/map/decide/move cycle.",
                 "3. G — reveal the fixed house and hidden victim; press G again.",
                 "4. O, then click ahead — demonstrate immediate Dijkstra replanning.",
-                "5. Resume — show confirmation, safe approach, and zero-collision result.", "",
-                "KEYS", "Space pause • N step • G truth • O edit wall • D add hazard • S sensors • P path • R reset",
+                "5. L — show the honest RL-ready interface, then resume the mission.",
+                "6. Finish with victim confirmation, transmitted coordinates, and metrics.", "",
+                "KEYS", "Space pause • N step • G truth • L RL glimpse • R reset",
+            )
+        else:
+            policy_status = self.rl_policy_status()
+            content = (
+                "RL READINESS — HONEST MIDTERM STATUS", policy_status, "",
+                "OBSERVATION", "2,517 values: perceived map, pose, proximity, coverage, frontiers,",
+                "WiFi confidence, masked victim direction, and previous collision.", "",
+                "ACTIONS", "Forward • Left • Backward • Right exploration preference", "",
+                "REWARD SIGNALS", "New map cells • victim confirmation • progress • rescue • collisions • timeout", "",
+                "DEPLOYMENT SAFETY", "PPO may suggest exploration. The Behavior Tree, obstacle validator, and",
+                "Dijkstra planner always retain authority over physical movement.",
             )
         for line in content:
-            is_heading = line in {"MISSION", "SYSTEM BOUNDARY", "WHAT TO WATCH", "RECOMMENDED 4-MINUTE FLOW", "KEYS"}
+            is_heading = line in {
+                "MISSION", "SYSTEM BOUNDARY", "WHAT TO WATCH", "RECOMMENDED 4-MINUTE FLOW", "KEYS",
+                "RL READINESS — HONEST MIDTERM STATUS", "OBSERVATION", "ACTIONS", "REWARD SIGNALS",
+                "DEPLOYMENT SAFETY",
+            }
             self._text(
                 line, x, y,
                 color=self.COLORS["warning"] if is_heading else self.COLORS["text"],
                 font=self.heading_font if is_heading else self.font,
             )
             y += 25 if is_heading else 21
-        prompt = "ENTER — START AUTONOMOUS MISSION" if visual.show_intro else "H — RETURN TO SIMULATION"
+        prompt = (
+            "ENTER — START AUTONOMOUS MISSION" if visual.show_intro
+            else "H — RETURN TO SIMULATION" if visual.show_guide
+            else "L — RETURN TO SIMULATION"
+        )
         prompt_surface = self.heading_font.render(prompt, True, self.COLORS["success"])
         self.screen.blit(prompt_surface, prompt_surface.get_rect(center=(panel.centerx, panel.bottom - 35)))
 
@@ -533,6 +631,7 @@ class SimulationRenderer:
         self._draw_victim(visual)
         self._draw_edit_overlay(visual)
         self._draw_rover(pose)
+        self._draw_signal_pulse(pose)
         self.screen.set_clip(None)
         self._draw_legend()
         self._draw_dashboard(visual)

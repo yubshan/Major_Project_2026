@@ -69,6 +69,7 @@ def run_visual(
         elif action == "start":
             visual.show_intro = False
             visual.show_guide = False
+            visual.show_rl_glimpse = False
             visual.paused = False
         elif action == "pause":
             if visual.show_intro:
@@ -107,7 +108,13 @@ def run_visual(
         elif action == "guide":
             visual.show_guide = not visual.show_guide
             visual.show_intro = False
+            visual.show_rl_glimpse = False
             visual.paused = visual.show_guide or visual.paused
+        elif action == "rl":
+            visual.show_rl_glimpse = not visual.show_rl_glimpse
+            visual.show_intro = False
+            visual.show_guide = False
+            visual.paused = visual.show_rl_glimpse or visual.paused
         elif action == "slower":
             visual.adjust_speed(-1)
         elif action == "faster":
@@ -130,6 +137,7 @@ def run_visual(
                         renderer.pg.K_RETURN: "start",
                         renderer.pg.K_SPACE: "pause",
                         renderer.pg.K_h: "guide",
+                        renderer.pg.K_l: "rl",
                         renderer.pg.K_n: "step",
                         renderer.pg.K_r: "reset",
                         renderer.pg.K_g: "view",

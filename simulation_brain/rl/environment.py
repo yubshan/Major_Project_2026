@@ -142,6 +142,7 @@ class SARSimulationEnv(gym.Env):
             reward += 100.0
             controller.metrics.rescued = True
             controller.metrics.termination_reason = "victim_rescued"
+            controller._publish_rescue_signal()
         elif truncated:
             reward -= 10.0
             controller.metrics.termination_reason = "step_limit"

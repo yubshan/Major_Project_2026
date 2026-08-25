@@ -10,7 +10,7 @@ from pathlib import Path
 
 REPORT_FIELDS = (
     "stage", "scenario", "seed", "episode", "total_timesteps", "episode_reward",
-    "rescued", "collisions", "steps", "detection_step", "coverage_pct",
+    "rescued", "signal_transmitted", "collisions", "steps", "detection_step", "coverage_pct",
 )
 
 

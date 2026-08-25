@@ -28,7 +28,7 @@ python -m pip install -r requirements.txt
 python -m pip install -r modules/decision_logic/requirements.txt
 
 .drishya/bin/python -m simulation_brain --mode visual --scenario studio-apartment --seed 7
-.drishya/bin/python -m simulation_brain --mode visual --scenario two-bedroom-house --seed 7 --presentation
+.drishya/bin/python -m simulation_brain --presentation
 .drishya/bin/python -m simulation_brain --mode visual --scenario maze --moving-obstacles 3 --obstacle-interval 6
 .drishya/bin/python -m simulation_brain --mode headless --scenario random --seed 7 --episodes 20
 .drishya/bin/python -m simulation_brain --mode visual --model simulation_brain/models/ppo_explore.zip
@@ -48,21 +48,20 @@ change the initial playback rate.
 Use the curated presentation entry point:
 
 ```bash
-.drishya/bin/python -m simulation_brain \
-  --mode visual --scenario two-bedroom-house --seed 7 --presentation
+.drishya/bin/python -m simulation_brain --presentation
 ```
 
-It opens paused on a short project briefing. Press `Enter` to begin the autonomous
-mission. The main dashboard then shows the live `Sense → Map → BT → Dijkstra → Move`
-pipeline, WiFi confidence, current behavior, path cost, coverage, replans, and
-collisions. Ground Truth view adds unobtrusive room labels so the fixed house structure
-is easy to explain; Robot Perception remains the honest default and does not receive
-those labels or hidden geometry.
+This one command selects the two-bedroom house, deterministic seed `4`, half-speed
+playback, Robot Perception view, and no moving hazards. It opens paused on a short
+project briefing; press `Enter` to begin. The dashboard shows the live
+`Sense → Map → BT → Dijkstra → Move` pipeline and the complete Behavior Tree priority
+selector. Ground Truth view adds room labels, while Robot Perception receives neither
+those labels nor hidden geometry.
 
 Presentation mode starts without moving hazards so the core system story remains
 clear. Demonstrate replanning with `O` and a mouse click, press `D` to add one autonomous
-hazard, or launch with `--moving-obstacles 1`. Press `H` at any time for the built-in four-minute
-defense guide. This simulation intentionally presents the software intelligence layer;
+hazard, or launch with `--moving-obstacles 1`. Press `H` for the four-minute defense
+guide and `L` for an honest RL-readiness panel. This simulation intentionally presents the software intelligence layer;
 hardware integration, physical sensor calibration, and field testing remain later work.
 
 The single-map dashboard contains a top-down rescue rover with four wheels, ToF bar,
@@ -86,6 +85,7 @@ Every action is available through an on-screen button and a keyboard shortcut:
 | `O` | Toggle obstacle-editing mode; click a map cell to add/remove a wall |
 | `D` | Pause or resume autonomous moving obstacles |
 | `H` | Show or hide the midterm presentation guide |
+| `L` | Show or hide the RL readiness glimpse |
 | `+` / `-` | Increase or decrease playback speed |
 | `Esc` | Exit |
 
@@ -119,14 +119,13 @@ default to zero moving obstacles so established evaluation results stay comparab
 
 ### Suggested defense demonstration
 
-1. Start `two-bedroom-house` in Robot Perception view and explain that gray cells are unknown.
-2. Pause with Space and use N to show one sensor-map-decision cycle at a time.
-3. Point out cyan ultrasonic rays, purple ToF rays, the yellow Dijkstra route, and the
-   rover's heading marker.
-4. Press G briefly to compare the hidden ground truth, then return to perception.
-5. Resume and show the human-readable Behavior Tree decision and live metrics.
-6. Allow the run to finish at the Victim Rescued overlay, or use
-   `unreachable-target` to demonstrate a safe failure state.
+1. Run `python -m simulation_brain --presentation` and explain the system boundary.
+2. Press Enter, then pause with Space and use N for one sense-map-decide-move cycle.
+3. Point out sensor rays, the perceived map, the active BT branch, and Dijkstra path.
+4. Press G briefly to reveal the fixed house and hidden victim, then return to perception.
+5. Press L to explain that PPO is training-ready but not trained; the heuristic is active.
+6. Resume and finish at `Victim Located — Signal Transmitted` with approximately 69%
+   coverage and zero collisions for the curated seed.
 
 ## Decision and navigation rules
 
@@ -150,9 +149,14 @@ default to zero moving obstacles so established evaluation results stay comparab
 The simulation reads and writes the existing `mission/control`,
 `navigation/robot_pose`, `navigation/occupancy_grid`, `navigation/target_waypoint`,
 `navigation/planned_path`, `sensor/proximity`, `detection/result`, and
-`decision/trace` keys. It adds `navigation/path_status` and `simulation/metrics`.
+`decision/trace` keys. It adds `navigation/path_status`, `simulation/metrics`, and
+`simulation/rescue_signal`.
 Interactive edits are reported through `simulation/map_edit`. Ground truth and the
 exact hidden victim cell are deliberately excluded.
+
+The rescue signal is published once after confirmed arrival and contains the victim
+grid cell, world coordinates, confidence, coverage, and timestamp. This represents
+location transmission to a rescue team—not physical evacuation by the simulated rover.
 
 ## Reinforcement-learning curriculum
 
@@ -223,7 +227,8 @@ Stable-Baselines3 and a trained checkpoint remain optional for the normal demons
 ## Metrics and tests
 
 Headless runs emit JSON containing steps, coverage, replans, collisions, detection
-count, rescue status, termination reason, elapsed time, and policy source.
+count, rescue status, signal-transmission status, termination reason, elapsed time,
+and policy source.
 
 ```bash
 python -m pytest simulation_brain/tests modules/decision_logic/tests -v

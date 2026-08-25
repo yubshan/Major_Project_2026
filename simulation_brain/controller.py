@@ -20,6 +20,7 @@ from modules.decision_logic.contracts import (
     ROBOT_POSE,
     SIMULATION_MAP_EDIT,
     SIMULATION_METRICS,
+    SIMULATION_RESCUE_SIGNAL,
     TARGET_WAYPOINT,
     now_ms,
 )
@@ -302,6 +303,25 @@ class SimulationController:
             self.metrics.victim_detections += 1
         self.blackboard.set(SIMULATION_METRICS, self.metrics.to_dict())
 
+    def _publish_rescue_signal(self) -> dict:
+        """Publish the confirmed victim location once when the rover reaches them."""
+        existing = self.blackboard.get(SIMULATION_RESCUE_SIGNAL)
+        if isinstance(existing, dict) and existing.get("sent") is True:
+            return existing
+        world_x, world_y = grid_to_world(*self.scenario.victim)
+        detection = self.blackboard.get(DETECTION_RESULT, {})
+        signal = {
+            "sent": True,
+            "victim_cell": self.scenario.victim,
+            "victim_world": {"x": world_x, "y": world_y},
+            "confidence": float(detection.get("confidence", 0.0)),
+            "coverage_pct": self.metrics.coverage_pct,
+            "timestamp_ms": now_ms(),
+        }
+        self.metrics.signal_transmitted = True
+        self.blackboard.set(SIMULATION_RESCUE_SIGNAL, signal)
+        return signal
+
     def set_dynamic_obstacle(self, cell: Cell, occupied: bool) -> MapEditResult:
         """Apply a safe map edit and immediately invalidate/replan navigation."""
         try:
@@ -506,6 +526,7 @@ class SimulationController:
             self.terminated = True
             self.metrics.rescued = True
             self.metrics.termination_reason = "victim_rescued"
+            self._publish_rescue_signal()
         elif self._victim_known_unreachable(detected):
             self.terminated = True
             self.metrics.termination_reason = "victim_unreachable"

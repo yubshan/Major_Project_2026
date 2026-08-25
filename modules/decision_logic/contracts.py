@@ -23,6 +23,7 @@ DECISION_TRACE = "decision/trace"
 DECISION_TICK_ID = "decision/tick_id"
 SIMULATION_METRICS = "simulation/metrics"
 SIMULATION_MAP_EDIT = "simulation/map_edit"
+SIMULATION_RESCUE_SIGNAL = "simulation/rescue_signal"
 
 MISSION_MODES = {"idle", "run", "pause", "return", "stop"}
 PROXIMITY_FIELDS = (
