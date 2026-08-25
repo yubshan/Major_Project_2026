@@ -3,7 +3,7 @@ import json
 import numpy as np
 
 from shared.coordinate_system import OCCUPIED
-from simulation_brain.planning import dijkstra
+from simulation_brain.planning import astar
 from simulation_brain.rl.environment import SARSimulationEnv, mixed_house_env
 from simulation_brain.rl.features import OBSERVATION_SCHEMA, OBSERVATION_SIZE, build_observation
 from simulation_brain.rl.reports import write_reports
@@ -20,7 +20,7 @@ def test_all_house_layouts_are_deterministic_and_solvable():
         assert np.array_equal(first.ground_truth, second.ground_truth)
         assert first.victim == second.victim
         assert first.ground_truth[first.start] != OCCUPIED
-        assert dijkstra(first.ground_truth, first.start, first.victim).status == "ok"
+        assert astar(first.ground_truth, first.start, first.victim).status == "ok"
 
 
 def test_victim_relative_fields_are_masked_until_confirmation():

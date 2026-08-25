@@ -1,4 +1,4 @@
-"""Deterministic Dijkstra planning and frontier selection."""
+"""Deterministic A* path planning and frontier selection."""
 
 from __future__ import annotations
 
@@ -24,8 +24,17 @@ def _valid(cell: Cell) -> bool:
     return 0 <= cell[0] < GRID_HEIGHT and 0 <= cell[1] < GRID_WIDTH
 
 
-def dijkstra(grid: np.ndarray, start: Cell, goal: Cell) -> PathResult:
-    """Return the shortest four-connected path, excluding start, through known FREE cells."""
+def _manhattan(cell: Cell, goal: Cell) -> int:
+    return abs(cell[0] - goal[0]) + abs(cell[1] - goal[1])
+
+
+def astar(grid: np.ndarray, start: Cell, goal: Cell) -> PathResult:
+    """Return an optimal four-connected A* path through known FREE cells.
+
+    The admissible Manhattan heuristic matches the unit-cost, non-diagonal grid.
+    Heap entries use ``(f, h, g, row, col)`` for deterministic goal-directed
+    tie-breaking. The returned path excludes ``start``.
+    """
     if not (_valid(start) and _valid(goal)):
         return PathResult([], None, "out_of_bounds")
     if start == goal:
@@ -33,11 +42,15 @@ def dijkstra(grid: np.ndarray, start: Cell, goal: Cell) -> PathResult:
     if grid[start] != FREE or grid[goal] != FREE:
         return PathResult([], None, "blocked_goal_or_start")
 
-    frontier: list[tuple[int, Cell]] = [(0, start)]
+    start_h = _manhattan(start, goal)
+    frontier: list[tuple[int, int, int, int, int]] = [
+        (start_h, start_h, 0, start[0], start[1])
+    ]
     distance = {start: 0}
     previous: dict[Cell, Cell] = {}
     while frontier:
-        cost, cell = heapq.heappop(frontier)
+        _, _, cost, row, col = heapq.heappop(frontier)
+        cell = (row, col)
         if cost != distance[cell]:
             continue
         if cell == goal:
@@ -50,7 +63,11 @@ def dijkstra(grid: np.ndarray, start: Cell, goal: Cell) -> PathResult:
             if new_cost < distance.get(nxt, 10**9):
                 distance[nxt] = new_cost
                 previous[nxt] = cell
-                heapq.heappush(frontier, (new_cost, nxt))
+                heuristic = _manhattan(nxt, goal)
+                heapq.heappush(
+                    frontier,
+                    (new_cost + heuristic, heuristic, new_cost, nxt[0], nxt[1]),
+                )
 
     if goal not in distance:
         return PathResult([], None, "unreachable")
@@ -116,8 +133,7 @@ def nearest_reachable_neighbor(grid: np.ndarray, start: Cell, goal: Cell) -> Cel
     candidates = []
     for dr, dc in NEIGHBORS:
         cell = goal[0] + dr, goal[1] + dc
-        result = dijkstra(grid, start, cell) if _valid(cell) else PathResult([], None, "invalid")
+        result = astar(grid, start, cell) if _valid(cell) else PathResult([], None, "invalid")
         if result.cost is not None:
             candidates.append((result.cost, cell))
     return min(candidates)[1] if candidates else None
-

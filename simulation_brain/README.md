@@ -6,11 +6,15 @@ locate a victim, and explain every decision. It connects the repository's shared
 Blackboard, occupancy mapper, behavior tree, and learning dependencies into one
 repeatable simulation.
 
+For a complete explanation of the coordinate system, sensing, mapping, Behavior Tree,
+A* planning, rescue signal, RL interface, metrics, and defense talking points,
+read [`SYSTEM_TECHNICAL_GUIDE.md`](SYSTEM_TECHNICAL_GUIDE.md).
+
 ## System flow
 
 ```text
 Hidden ground truth -> simulated ultrasonic/ToF observations -> occupancy grid
-  -> safety-first Behavior Tree -> exploration/victim waypoint -> Dijkstra path
+  -> safety-first Behavior Tree -> exploration/victim waypoint -> A* path
   -> validated grid motion -> environment update -> decision trace and metrics
 ```
 
@@ -54,7 +58,7 @@ Use the curated presentation entry point:
 This one command selects the two-bedroom house, deterministic seed `4`, half-speed
 playback, Robot Perception view, and no moving hazards. It opens paused on a short
 project briefing; press `Enter` to begin. The dashboard shows the live
-`Sense → Map → BT → Dijkstra → Move` pipeline and the complete Behavior Tree priority
+`Sense → Map → BT → A* → Move` pipeline and the complete Behavior Tree priority
 selector. Ground Truth view adds room labels, while Robot Perception receives neither
 those labels nor hidden geometry.
 
@@ -66,7 +70,7 @@ hardware integration, physical sensor calibration, and field testing remain late
 
 The single-map dashboard contains a top-down rescue rover with four wheels, ToF bar,
 ultrasonic indicators, WiFi antenna, heading marker, and behavior status light. Smooth
-movement is visual only: the controller, Behavior Tree, Dijkstra planner, and metrics
+movement is visual only: the controller, Behavior Tree, A* planner, and metrics
 continue to use authoritative grid cells.
 
 ### Presentation controls
@@ -81,7 +85,7 @@ Every action is available through an on-screen button and a keyboard shortcut:
 | `R` | Reset the same scenario and seed |
 | `G` | Toggle Robot Perception and Ground Truth |
 | `S` | Show or hide ultrasonic/ToF rays |
-| `P` | Show or hide the Dijkstra path and target |
+| `P` | Show or hide the A* path and target |
 | `O` | Toggle obstacle-editing mode; click a map cell to add/remove a wall |
 | `D` | Pause or resume autonomous moving obstacles |
 | `H` | Show or hide the midterm presentation guide |
@@ -98,7 +102,7 @@ view and is never published to the Blackboard or RL observation.
 Press `O` or click **Edit On**, then click any interior map cell to add an obstacle.
 Click the same cell again to remove it. The editor treats the change as an observed map
 event: ground truth and occupancy are updated together, the old route is invalidated,
-and Dijkstra immediately finds a new route around the obstacle. Boundary, robot, and
+and A* immediately finds a new route around the obstacle. Boundary, robot, and
 victim cells are protected. The highlighted cell, edit count, and decision message make
 the replanning event visible during a demonstration.
 
@@ -106,7 +110,7 @@ Visual mode starts with two orange autonomous obstacles. They move one safe grid
 every 10 decision ticks and are tracked as observed hazards. Before each move is
 accepted, the simulator prevents entry into the robot or victim cell and verifies that
 the victim remains reachable in ground truth. The perceived grid and any affected path
-are then updated before robot motion, so Dijkstra never deliberately follows a route
+are then updated before robot motion, so A* never deliberately follows a route
 through a moving obstacle. Configure this behavior with:
 
 ```bash
@@ -121,7 +125,7 @@ default to zero moving obstacles so established evaluation results stay comparab
 
 1. Run `python -m simulation_brain --presentation` and explain the system boundary.
 2. Press Enter, then pause with Space and use N for one sense-map-decide-move cycle.
-3. Point out sensor rays, the perceived map, the active BT branch, and Dijkstra path.
+3. Point out sensor rays, the perceived map, the active BT branch, and A* path.
 4. Press G briefly to reveal the fixed house and hidden victim, then return to perception.
 5. Press L to explain that PPO is training-ready but not trained; the heuristic is active.
 6. Resume and finish at `Victim Located — Signal Transmitted` with approximately 69%
@@ -134,7 +138,7 @@ default to zero moving obstacles so established evaluation results stay comparab
 - Ground truth is held privately by `SimulationController`; it is never published to
   the policy Blackboard.
 - Explicit sensor hit flags distinguish a real obstacle from a maximum-range reading.
-- Dijkstra traverses only known free cells. Unknown and occupied cells are never used
+- A* traverses only known free cells. Unknown and occupied cells are never used
   as shortcuts.
 - Exploration chooses a reachable free frontier using shortest distance and information
   gain. A sector preference can come from PPO; a deterministic heuristic is the default.
@@ -166,7 +170,7 @@ relative actions (`forward`, `left`, `backward`, `right`) attempt the adjacent c
 directly. A hidden wall attempt leaves the rover in place, increments collision metrics,
 and applies an escalating penalty. This gives PPO an observable collision-learning
 signal. During deployment, PPO only proposes a directional exploration preference;
-the Behavior Tree, known-free collision check, and Dijkstra planner retain final motion
+the Behavior Tree, known-free collision check, and A* planner retain final motion
 authority.
 
 The versioned `house-rescue-v2` observation has 2,517 values: the perceived 50×50 grid,

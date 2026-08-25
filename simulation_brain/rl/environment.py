@@ -21,7 +21,7 @@ class SARSimulationEnv(gym.Env):
 
     This training environment intentionally permits collision *attempts*. The visual
     and headless deployment controller remains protected by its Behavior Tree,
-    collision validator, and Dijkstra planner.
+    collision validator, and A* planner.
     """
 
     metadata = {"render_modes": []}

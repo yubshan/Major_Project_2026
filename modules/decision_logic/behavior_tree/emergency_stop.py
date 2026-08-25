@@ -72,7 +72,7 @@ class EmergencyStop(py_trees.behaviour.Behaviour):
                 0: {"us_front"},
                 90: {"us_left90"},
                 270: {"us_right90"},
-                # The rear is not instrumented; Dijkstra's known-free path remains authoritative.
+                # The rear is not instrumented; A*'s known-free path remains authoritative.
                 180: set(),
             }.get(relative, set(PROXIMITY_FIELDS))
 

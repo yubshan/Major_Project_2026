@@ -270,7 +270,7 @@ class SimulationRenderer:
         ):
             return (
                 f"Moving obstacle {map_event.get('id')} shifted to {map_event.get('cell')}; "
-                "Dijkstra checked the route again."
+                "A* checked the route again."
             )
         if self.controller.terminated:
             return {
@@ -282,7 +282,7 @@ class SimulationRenderer:
         behavior = self.controller.blackboard.get("decision/state", {}).get("active_behavior", "")
         return {
             "RLExplore": "Exploring the nearest useful frontier.",
-            "NavigateToTarget": "Following the collision-checked Dijkstra path.",
+            "NavigateToTarget": "Following the collision-checked A* path.",
             "VictimConfirmation": "Victim signal confirmed; preparing a safe route.",
             "EmergencyStop": "Unsafe obstacle detected; movement stopped.",
             "SafetyGate": "Safety gate is holding the robot.",
@@ -306,7 +306,7 @@ class SimulationRenderer:
         path_status = self.controller.blackboard.get(PATH_STATUS, {})
         if isinstance(path_status, dict) and now_ms() - path_status.get("timestamp_ms", 0) <= 500:
             active = 3
-        labels = ("SENSE", "MAP", "BT", "DIJKSTRA", "MOVE")
+        labels = ("SENSE", "MAP", "BT", "A*", "MOVE")
         gap = 4
         item_width = max(34, (width - gap * (len(labels) - 1)) // len(labels))
         for index, label in enumerate(labels):
@@ -462,7 +462,7 @@ class SimulationRenderer:
         y = self.map_origin[1] + self.map_pixels + 13
         items: Iterable[tuple[str, tuple[int, int, int]]] = (
             ("Free", self.COLORS["free"]), ("Obstacle", self.COLORS["occupied"]),
-            ("Unknown", self.COLORS["unknown"]), ("Dijkstra path", self.COLORS["path"]),
+            ("Unknown", self.COLORS["unknown"]), ("A* path", self.COLORS["path"]),
             ("Sensor rays", self.COLORS["sensor"]), ("Victim", self.COLORS["victim"]),
             ("Moving hazard", (244, 132, 55)),
         )
@@ -529,7 +529,7 @@ class SimulationRenderer:
                 "MISSION", "An autonomous rescue rover explores an unknown building, avoids obstacles,",
                 "finds a hidden victim from simulated WiFi evidence, reaches them safely, and",
                 "transmits their confirmed location to the rescue team.", "",
-                "SYSTEM BOUNDARY", "This demonstration validates perception, mapping, decisions, Dijkstra",
+                "SYSTEM BOUNDARY", "This demonstration validates perception, mapping, decisions, A*",
                 "navigation, dynamic replanning, and RL readiness. Hardware comes later.", "",
                 "WHAT TO WATCH", "Gray space becomes mapped • cyan/purple rays are sensors • yellow is the",
                 "safe path • the dashboard explains every Behavior Tree decision.",
@@ -539,7 +539,7 @@ class SimulationRenderer:
                 "RECOMMENDED 4-MINUTE FLOW", "1. Enter — start in honest Robot Perception view.",
                 "2. Space then N — explain one sense/map/decide/move cycle.",
                 "3. G — reveal the fixed house and hidden victim; press G again.",
-                "4. O, then click ahead — demonstrate immediate Dijkstra replanning.",
+                "4. O, then click ahead — demonstrate immediate A* replanning.",
                 "5. L — show the honest RL-ready interface, then resume the mission.",
                 "6. Finish with victim confirmation, transmitted coordinates, and metrics.", "",
                 "KEYS", "Space pause • N step • G truth • L RL glimpse • R reset",
@@ -553,7 +553,7 @@ class SimulationRenderer:
                 "ACTIONS", "Forward • Left • Backward • Right exploration preference", "",
                 "REWARD SIGNALS", "New map cells • victim confirmation • progress • rescue • collisions • timeout", "",
                 "DEPLOYMENT SAFETY", "PPO may suggest exploration. The Behavior Tree, obstacle validator, and",
-                "Dijkstra planner always retain authority over physical movement.",
+                "A* planner always retains authority over physical movement.",
             )
         for line in content:
             is_heading = line in {
