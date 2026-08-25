@@ -54,6 +54,7 @@ def test_curated_presentation_mission_transmits_one_rescue_signal():
     assert first_result["rescued"] is True
     assert first_result["signal_transmitted"] is True
     assert first_result["collisions"] == 0
+    assert 344 <= first_result["steps"] <= 345
     assert 68.0 <= first_result["coverage_pct"] <= 70.0
     assert signal["sent"] is True
     assert tuple(signal["victim_cell"]) == first.scenario.victim

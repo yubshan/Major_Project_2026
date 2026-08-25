@@ -30,7 +30,7 @@ from shared.coordinate_system import FREE, GRID_HEIGHT, GRID_WIDTH, OCCUPIED, gr
 from simulation_brain.config import SimulationConfig
 from simulation_brain.metrics import EpisodeMetrics
 from simulation_brain.planning import (
-    choose_frontier, dijkstra, nearest_reachable_neighbor, reachable_frontiers,
+    astar, choose_frontier, nearest_reachable_neighbor, reachable_frontiers,
 )
 from simulation_brain.scenarios import Scenario, create_scenario
 from simulation_brain.sensors import apply_observation, sense
@@ -80,6 +80,10 @@ class SimulationController:
         # The integrated PPO policy uses the richer Simulation Brain observation;
         # the existing decision-module checkpoint format remains backward-compatible.
         self.brain = Brain(self.blackboard)
+        # Load optional BT resources before publishing time-sensitive sensor state.
+        # Otherwise a cold Stable-Baselines import can make the first packet stale
+        # and introduce a timing-dependent extra safety-stop tick.
+        self.brain.setup()
         self._policy = None
         self.policy_load_error: str | None = None
         if model_path:
@@ -222,7 +226,7 @@ class SimulationController:
         next_invalid = bool(existing) and perceived[tuple(existing[0])] != FREE
         if signature == self._last_plan_signature and existing and not next_invalid:
             return
-        result = dijkstra(perceived, self.robot, effective_goal)
+        result = astar(perceived, self.robot, effective_goal)
         self.blackboard.update_many({
             PLANNED_PATH: result.path,
             PATH_STATUS: {
@@ -404,7 +408,7 @@ class SimulationController:
             return False
         self.ground_truth[old] = FREE
         self.ground_truth[new] = OCCUPIED
-        route_exists = dijkstra(
+        route_exists = astar(
             self.ground_truth, self.robot, self.scenario.victim
         ).status == "ok"
         self.ground_truth[new] = FREE
@@ -428,7 +432,7 @@ class SimulationController:
                 break
             cell = candidates[int(index)]
             self.ground_truth[cell] = OCCUPIED
-            if dijkstra(self.ground_truth, self.robot, self.scenario.victim).status != "ok":
+            if astar(self.ground_truth, self.robot, self.scenario.victim).status != "ok":
                 self.ground_truth[cell] = FREE
                 continue
             obstacle_id = self._next_moving_obstacle_id

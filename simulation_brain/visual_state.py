@@ -112,8 +112,8 @@ class VisualSessionState:
 
     def notify_map_edit(self, result) -> None:
         messages = {
-            "dynamic_obstacle_added": f"Obstacle added at {result.cell}; Dijkstra replanned.",
-            "dynamic_obstacle_removed": f"Obstacle removed at {result.cell}; Dijkstra replanned.",
+            "dynamic_obstacle_added": f"Obstacle added at {result.cell}; A* replanned.",
+            "dynamic_obstacle_removed": f"Obstacle removed at {result.cell}; A* replanned.",
             "robot_cell_protected": "Cannot place an obstacle on the robot.",
             "victim_cell_protected": "Cannot place an obstacle on the victim.",
             "boundary_protected": "Boundary walls are protected.",

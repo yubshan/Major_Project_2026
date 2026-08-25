@@ -15,7 +15,7 @@ The current software prototype demonstrates that the rover can:
 3. build an occupancy map incrementally;
 4. select actions through a safety-first Behavior Tree;
 5. choose useful exploration frontiers;
-6. plan shortest collision-free routes using Dijkstra's algorithm;
+6. plan shortest collision-free routes using A*;
 7. detect a hidden victim from simulated WiFi confidence;
 8. navigate to the confirmed victim;
 9. transmit the victim's location to a rescue coordinator; and
@@ -51,8 +51,8 @@ The presentation preset resolves to:
 The expected deterministic seed-4 result is:
 
 ```text
-Victim reached:       yes
-Signal transmitted:  yes
+Victim reached:      yes
+Signal transmitted: yes
 Steps:               344
 Coverage:            68.64%
 Collisions:          0
@@ -82,7 +82,7 @@ BEHAVIOR TREE (priority selector)
                          │
                          ▼
 PLANNING
-  Frontier goal or victim goal → Dijkstra over known-free cells
+  Frontier goal or victim goal → A* over known-free cells
                          │
                          ▼
 VALIDATED MOTION
@@ -96,7 +96,7 @@ RESULTS
 The visual dashboard presents the same process as:
 
 ```text
-SENSE → MAP → BT → DIJKSTRA → MOVE
+SENSE → MAP → BT → A* → MOVE
 ```
 
 The renderer is only a view of the state. Smooth animation never changes the
@@ -310,7 +310,7 @@ dashboard therefore labels an inactive SafetyGate as `CLEAR`.
 
 EmergencyStop checks the sensor aligned with the next planned move. Its danger threshold
 is 15 cm. It avoids deadlocking the rover because side obstacles do not block a planned
-turn, and a rear movement relies on Dijkstra's already known-free cell.
+turn, and a rear movement relies on A*'s already known-free cell.
 
 If the relevant measured obstacle is closer than 15 cm, it publishes a zero-speed
 command and takes control of the selector.
@@ -332,7 +332,7 @@ command as continuous physics; it executes exactly one validated grid cell from
 
 When there is no victim target or current waypoint, this branch proposes an exploration
 direction. With no trained model it uses a deterministic heuristic. The integrated
-controller converts the proposal into a reachable frontier and then invokes Dijkstra.
+controller converts the proposal into a reachable frontier and then invokes A*.
 
 The node name remains `RLExplore` because it is the integration point for a future PPO
 policy. The presentation correctly displays `HEURISTIC FALLBACK` when PPO is absent.
@@ -384,9 +384,19 @@ Frontier selection works as follows:
 The four absolute sectors are east, north, west, and south. PPO or the heuristic only
 expresses a preference. It never directly authorizes deployment movement.
 
-## 12. Dijkstra planning
+## 12. A* planning
 
-Dijkstra runs on the **perceived** occupancy grid, not ground truth. Its rules are:
+A* runs on the **perceived** occupancy grid, not ground truth. It uses:
+
+```text
+g(n) = cells travelled from the robot
+h(n) = |row - goal_row| + |col - goal_col|
+f(n) = g(n) + h(n)
+```
+
+Manhattan distance is admissible and consistent because movement is four-connected and
+every cell transition costs 1. Heap entries use `(f, h, g, row, col)`, providing
+deterministic, goal-directed tie-breaking. The traversal rules are:
 
 - four-connected neighbors only;
 - each step costs 1;
@@ -432,7 +442,7 @@ the ground-truth victim remains reachable. When a hazard changes:
 - the perceived map receives the simulated event;
 - an affected exploration target is cleared;
 - the current path is invalidated when necessary; and
-- Dijkstra checks the route before robot motion.
+- A* checks the route before robot motion.
 
 These features demonstrate online replanning. They are advanced presentation tools and
 are disabled by default in the curated midterm run.
@@ -450,7 +460,7 @@ Important keys are:
 | `navigation/robot_pose` | Controller | world x/y, heading, timestamp |
 | `navigation/occupancy_grid` | Mapping | perceived 50×50 grid only |
 | `navigation/target_waypoint` | BT/controller | exploration or victim `(row, col)` |
-| `navigation/planned_path` | Dijkstra planner | ordered remaining cells |
+| `navigation/planned_path` | A* planner | ordered remaining cells |
 | `navigation/path_status` | Planner | goal, effective goal, status, cost, reason |
 | `sensor/proximity` | Sensors | five distances, hits, rays, ToF data, range, timestamp |
 | `detection/result` | Victim detector | human x/y, confidence, timestamp |
@@ -511,7 +521,7 @@ occupied or out-of-bounds cell.
 | `steps` | Logical controller ticks |
 | `explored_cells` | Non-unknown occupancy cells |
 | `coverage_pct` | Explored cells divided by 2500 |
-| `replans` | Dijkstra planner invocations/refreshes |
+| `replans` | A* planner invocations/refreshes |
 | `collisions` | Refused invalid deployment moves or RL training wall attempts |
 | `unsafe_proximity_count` | Recorded unsafe proximity events |
 | `dynamic_obstacle_changes` | Accepted manual edits |
@@ -565,7 +575,7 @@ This distinction is essential:
 | Mode | What an RL action does |
 |---|---|
 | Training | Attempts an adjacent cell directly; wall attempts are recorded and penalized |
-| Deployment | Expresses an exploration-sector preference; BT, validation, and Dijkstra execute safely |
+| Deployment | Expresses an exploration-sector preference; BT, validation, and A* execute safely |
 
 Permitting collision attempts during training gives PPO a learning signal. Deployment
 does not deliberately reproduce those collisions.
@@ -613,7 +623,7 @@ No improvement percentage is fabricated without actual training/evaluation resul
 - light: known free;
 - dark: known obstacle;
 - cyan/purple: ultrasonic and ToF rays;
-- yellow: Dijkstra path;
+- yellow: A* path;
 - green marker: current target;
 - blue dots: visited trail;
 - red figure: confirmed victim;
@@ -710,7 +720,7 @@ A concise technical explanation is:
 > The ground-truth house is private. The rover starts with an unknown occupancy grid.
 > Simulated range sensors reveal only nearby cells. A safety-first Behavior Tree checks
 > mission validity and collision risk before selecting victim navigation or exploration.
-> Exploration chooses a reachable frontier, while Dijkstra plans only through known-free
+> Exploration chooses a reachable frontier, while A* plans only through known-free
 > cells. A noisy WiFi confidence confirms the hidden victim. After the rover reaches the
 > confirmed location, it publishes a rescue-signal packet. RL is training-ready but not
 > claimed as trained; without a checkpoint, deterministic exploration is used, and
@@ -721,7 +731,7 @@ During the presentation:
 1. explain the boundary on the intro screen;
 2. press `Enter` and show unknown cells becoming mapped;
 3. pause and press `N` to explain one complete controller tick;
-4. point to the active BT branch and Dijkstra path;
+4. point to the active BT branch and A* path;
 5. press `G` briefly to contrast perception with ground truth;
 6. press `L` and explain the honest RL-ready boundary;
 7. resume; and
@@ -736,7 +746,7 @@ During the presentation:
 - ultrasonic and simplified ToF raycasting;
 - occupancy mapping;
 - Behavior Tree decisions;
-- Dijkstra and frontier planning;
+- A* and frontier planning;
 - victim confidence and confirmation;
 - validated movement and dynamic replanning;
 - rescue-signal contract;
@@ -767,10 +777,12 @@ research platform, not as proof of completed hardware performance.
 Safety and mission priorities need deterministic authority. A learned policy may suggest
 exploration, but it must not bypass emergency stopping, map validation, or path safety.
 
-### Why use Dijkstra?
+### Why use A*?
 
-The grid has uniform movement cost, and Dijkstra provides deterministic shortest paths
-with clear unreachable/error states. It is easy to verify and explain.
+The grid has uniform movement cost, and Manhattan distance safely guides A* toward the
+goal without sacrificing shortest-path optimality. Compared with an uninformed
+uniform-cost search, A* normally avoids expanding as many irrelevant cells while preserving clear,
+deterministic unreachable/error states.
 
 ### Why are unknown cells blocked?
 
@@ -813,7 +825,7 @@ The main implementation areas are:
 | Controller/runtime tick | `simulation_brain/controller.py` |
 | Scenarios | `simulation_brain/scenarios.py` |
 | Sensors/mapping | `simulation_brain/sensors.py` |
-| Dijkstra/frontiers | `simulation_brain/planning.py` |
+| A*/frontiers | `simulation_brain/planning.py` |
 | Visual presentation | `simulation_brain/renderer.py`, `visual_state.py` |
 | RL observation/environment | `simulation_brain/rl/features.py`, `rl/environment.py` |
 | PPO curriculum/evaluation | `simulation_brain/rl/train_ppo.py`, `rl/evaluate.py` |
@@ -821,4 +833,3 @@ The main implementation areas are:
 | Blackboard contracts | `modules/decision_logic/contracts.py` |
 | Shared coordinates | `shared/coordinate_system.py` |
 | Tests | `simulation_brain/tests/`, `modules/decision_logic/tests/` |
-

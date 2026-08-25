@@ -102,7 +102,7 @@ class NavigateToTarget(py_trees.behaviour.Behaviour):
                 self.feedback_message = "Waiting for a planned path"
                 return py_trees.common.Status.FAILURE
             # Legacy/demo publishers predate path_status; preserve their direct
-            # steering behavior while the integrated simulator always uses Dijkstra.
+            # steering behavior while the integrated simulator always uses A*.
             next_row, next_col = target_row, target_col
         else:
             next_row, next_col = path[0]
