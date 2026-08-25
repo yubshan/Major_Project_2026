@@ -6,6 +6,10 @@ locate a victim, and explain every decision. It connects the repository's shared
 Blackboard, occupancy mapper, behavior tree, and learning dependencies into one
 repeatable simulation.
 
+For a complete explanation of the coordinate system, sensing, mapping, Behavior Tree,
+Dijkstra planning, rescue signal, RL interface, metrics, and defense talking points,
+read [`SYSTEM_TECHNICAL_GUIDE.md`](SYSTEM_TECHNICAL_GUIDE.md).
+
 ## System flow
 
 ```text
