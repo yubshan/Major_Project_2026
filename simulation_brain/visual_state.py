@@ -38,11 +38,21 @@ class VisualSessionState:
     notification_seconds: float = 0.0
     last_edited_cell: Cell | None = None
     last_edit_occupied: bool | None = None
+    presentation_mode: bool = False
+    show_intro: bool = False
+    show_guide: bool = False
+    show_rl_glimpse: bool = False
 
     @classmethod
-    def from_controller(cls, controller, speed: float = 0.5) -> "VisualSessionState":
+    def from_controller(
+        cls, controller, speed: float = 0.5, presentation_mode: bool = False,
+    ) -> "VisualSessionState":
         pose = VisualPose(float(controller.robot[0]), float(controller.robot[1]), float(controller.heading))
-        return cls(pose, pose, speed=speed, visited={controller.robot})
+        return cls(
+            pose, pose, speed=speed, visited={controller.robot},
+            paused=presentation_mode, presentation_mode=presentation_mode,
+            show_intro=presentation_mode,
+        )
 
     @property
     def animating(self) -> bool:
@@ -83,7 +93,10 @@ class VisualSessionState:
         self.current_pose = pose
         self.transition_progress = 1.0
         self.visited = {controller.robot}
-        self.paused = False
+        self.paused = self.presentation_mode
+        self.show_intro = self.presentation_mode
+        self.show_guide = False
+        self.show_rl_glimpse = False
         self.notification = "Scenario reset with the same seed."
         self.notification_seconds = 2.5
         self.last_edited_cell = None

@@ -12,6 +12,7 @@ class SimulationConfig:
     victim_confirmation_radius_cells: int = 1
     victim_confirm_threshold: float = 0.85
     obstacle_density: float = 0.12
+    moving_obstacle_interval: int = 10
     cell_pixels: int = 14
     dashboard_width: int = 370
     fps: int = 60

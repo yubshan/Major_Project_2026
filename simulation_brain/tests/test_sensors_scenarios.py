@@ -3,7 +3,7 @@ import numpy as np
 from modules.navigation.occupancy_grid import OccupancyGrid
 from shared.coordinate_system import FREE, OCCUPIED, UNKNOWN
 from simulation_brain.planning import dijkstra
-from simulation_brain.scenarios import create_scenario
+from simulation_brain.scenarios import HOUSE_SCENARIOS, create_scenario
 from simulation_brain.sensors import apply_observation, sense
 
 
@@ -29,7 +29,7 @@ def test_hit_sensor_marks_endpoint_occupied():
 
 
 def test_normal_scenarios_have_reachable_victims():
-    for name in ("open-room", "maze", "corridor", "blocked-route", "random"):
+    for name in ("open-room", "maze", "corridor", "blocked-route", "random") + HOUSE_SCENARIOS:
         scenario = create_scenario(name, seed=11)
         result = dijkstra(scenario.ground_truth, scenario.start, scenario.victim)
         assert result.status == "ok", name
@@ -38,4 +38,3 @@ def test_normal_scenarios_have_reachable_victims():
 def test_unreachable_fixture_is_intentionally_unreachable():
     scenario = create_scenario("unreachable-target", seed=1)
     assert dijkstra(scenario.ground_truth, scenario.start, scenario.victim).status == "unreachable"
-

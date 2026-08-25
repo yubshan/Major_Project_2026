@@ -24,6 +24,12 @@ This is a draft to discuss with the team. Do not treat it as final until navigat
 | `decision/trace` | Dashboard/logs | `tick_id`, `selected_action`, `reason`, `source_layer`, `status`, `command`, `timestamp_ms` | Latest structured explanation. |
 | `detection/confirm_request` | WiFi detection/simulation | `target_x`, `target_y`, `required_confidence`, `timestamp_ms` | Optional, used when confirmation behavior exists. |
 
+## Simulation Mission Outputs
+
+| Key | Consumer | Required fields | Notes |
+|---|---|---|---|
+| `simulation/rescue_signal` | Dashboard/rescue coordinator | `sent`, `victim_cell`, `victim_world`, `confidence`, `coverage_pct`, `timestamp_ms` | Published exactly once after the rover reaches a confirmed victim. |
+
 ## Example Input Payloads
 
 ```python

@@ -60,3 +60,5 @@ modules/decision_logic/models/
 modules/decision_logic/logs/
 simulation_brain/models/
 simulation_brain/logs/
+simulation_brain/reports/
+simulation_brain/replays/

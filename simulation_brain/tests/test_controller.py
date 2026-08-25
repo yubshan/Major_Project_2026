@@ -1,6 +1,8 @@
 import numpy as np
 
-from modules.decision_logic.contracts import PATH_STATUS, PLANNED_PATH
+from modules.decision_logic.contracts import (
+    PATH_STATUS, PLANNED_PATH, SIMULATION_RESCUE_SIGNAL,
+)
 from shared.coordinate_system import FREE, OCCUPIED
 from simulation_brain.controller import SimulationController
 
@@ -40,6 +42,28 @@ def test_end_to_end_robot_rescues_victim_without_collision():
     assert result["termination_reason"] == "victim_rescued"
     assert result["collisions"] == 0
     assert controller.blackboard.get("decision/trace")
+
+
+def test_curated_presentation_mission_transmits_one_rescue_signal():
+    first = SimulationController("two-bedroom-house", seed=4)
+    second = SimulationController("two-bedroom-house", seed=4)
+    assert first.blackboard.get(SIMULATION_RESCUE_SIGNAL) is None
+    first_result = first.run(max_steps=750)
+    second_result = second.run(max_steps=750)
+    signal = first.blackboard.get(SIMULATION_RESCUE_SIGNAL)
+    assert first_result["rescued"] is True
+    assert first_result["signal_transmitted"] is True
+    assert first_result["collisions"] == 0
+    assert 68.0 <= first_result["coverage_pct"] <= 70.0
+    assert signal["sent"] is True
+    assert tuple(signal["victim_cell"]) == first.scenario.victim
+    assert signal["confidence"] >= first.config.victim_confirm_threshold
+    assert signal["coverage_pct"] == first_result["coverage_pct"]
+    timestamp = signal["timestamp_ms"]
+    assert first._publish_rescue_signal()["timestamp_ms"] == timestamp
+    assert first.robot == second.robot
+    assert first.metrics.steps == second.metrics.steps
+    assert first.metrics.coverage_pct == second.metrics.coverage_pct
 
 
 def test_missing_ppo_checkpoint_falls_back_safely():
@@ -97,3 +121,35 @@ def test_dynamic_obstacle_protects_robot_victim_and_boundaries():
     assert controller.set_dynamic_obstacle((0, 10), False).reason == "boundary_protected"
     assert controller.toggle_dynamic_obstacle((99, 99)).reason == "out_of_bounds"
     assert controller.metrics.dynamic_obstacle_changes == 0
+
+
+def test_moving_obstacles_are_seeded_and_deterministic():
+    first = SimulationController("open-room", seed=9, moving_obstacle_count=2)
+    second = SimulationController("open-room", seed=9, moving_obstacle_count=2)
+    assert first.moving_obstacles == second.moving_obstacles
+    assert len(first.moving_obstacles) == 2
+    assert first.advance_moving_obstacles(force=True) == 2
+    assert second.advance_moving_obstacles(force=True) == 2
+    assert first.moving_obstacles == second.moving_obstacles
+
+
+def test_moving_obstacles_trigger_safe_replanning_and_rescue():
+    controller = SimulationController(
+        "open-room", seed=7, moving_obstacle_count=2, moving_obstacle_interval=5
+    )
+    result = controller.run(max_steps=500)
+    assert result["moving_obstacle_moves"] > 0
+    assert result["rescued"] is True
+    assert result["collisions"] == 0
+    assert all(
+        cell not in controller.blackboard.get(PLANNED_PATH, [])
+        for cell in controller.moving_obstacles.values()
+    )
+
+
+def test_moving_obstacles_can_be_paused():
+    controller = SimulationController("open-room", seed=7, moving_obstacle_count=2)
+    before = dict(controller.moving_obstacles)
+    controller.moving_obstacles_enabled = False
+    assert controller.advance_moving_obstacles(force=True) == 0
+    assert controller.moving_obstacles == before

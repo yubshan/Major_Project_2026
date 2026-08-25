@@ -20,6 +20,7 @@ from modules.decision_logic.contracts import (
     ROBOT_POSE,
     SIMULATION_MAP_EDIT,
     SIMULATION_METRICS,
+    SIMULATION_RESCUE_SIGNAL,
     TARGET_WAYPOINT,
     now_ms,
 )
@@ -63,6 +64,8 @@ class SimulationController:
         seed: int = 7,
         config: SimulationConfig | None = None,
         model_path: str | None = None,
+        moving_obstacle_count: int = 0,
+        moving_obstacle_interval: int | None = None,
     ):
         self.config = config or SimulationConfig()
         self.seed = seed
@@ -86,12 +89,27 @@ class SimulationController:
                 if not path.is_file():
                     raise FileNotFoundError(path)
                 self._policy = PPO.load(str(path))
+                from simulation_brain.rl.features import OBSERVATION_SCHEMA, OBSERVATION_SIZE
+                actual_shape = tuple(self._policy.observation_space.shape)
+                if actual_shape != (OBSERVATION_SIZE,):
+                    self._policy = None
+                    raise ValueError(
+                        f"Incompatible PPO observation space {actual_shape}; expected "
+                        f"{OBSERVATION_SCHEMA} ({OBSERVATION_SIZE},). Retrain this checkpoint."
+                    )
             except Exception as exc:  # Safe deterministic fallback is intentional.
                 self.policy_load_error = str(exc)
         self.terminated = False
+        self.moving_obstacles_enabled = True
+        self.moving_obstacle_interval = max(
+            1, moving_obstacle_interval or self.config.moving_obstacle_interval
+        )
+        self.moving_obstacles: dict[int, Cell] = {}
+        self._next_moving_obstacle_id = 1
         self.exploration_sector_override: int | None = None
         self._last_plan_signature = None
         self._publish_mission()
+        self.spawn_moving_obstacles(max(0, int(moving_obstacle_count)))
 
     @property
     def ground_truth(self) -> np.ndarray:
@@ -161,6 +179,25 @@ class SimulationController:
             return
         goal = tuple(goal)
         perceived = self.occupancy.data
+        if perceived[goal] != FREE and goal != self.scenario.victim:
+            # An exploration frontier can become invalid when a later sensor ray
+            # resolves it as occupied. Drop it instead of repeatedly "arriving" at
+            # the nearest free neighbor and stalling the mission.
+            self.blackboard.update_many({
+                TARGET_WAYPOINT: None,
+                PLANNED_PATH: [],
+                PATH_STATUS: {
+                    "goal": goal,
+                    "effective_goal": None,
+                    "status": "invalidated",
+                    "cost": None,
+                    "replan_reason": "exploration_target_became_occupied",
+                    "timestamp_ms": now_ms(),
+                },
+            })
+            self._last_plan_signature = None
+            self.metrics.replans += 1
+            return
         effective_goal = goal
         if perceived[goal] != FREE:
             alternative = nearest_reachable_neighbor(perceived, self.robot, goal)
@@ -266,6 +303,25 @@ class SimulationController:
             self.metrics.victim_detections += 1
         self.blackboard.set(SIMULATION_METRICS, self.metrics.to_dict())
 
+    def _publish_rescue_signal(self) -> dict:
+        """Publish the confirmed victim location once when the rover reaches them."""
+        existing = self.blackboard.get(SIMULATION_RESCUE_SIGNAL)
+        if isinstance(existing, dict) and existing.get("sent") is True:
+            return existing
+        world_x, world_y = grid_to_world(*self.scenario.victim)
+        detection = self.blackboard.get(DETECTION_RESULT, {})
+        signal = {
+            "sent": True,
+            "victim_cell": self.scenario.victim,
+            "victim_world": {"x": world_x, "y": world_y},
+            "confidence": float(detection.get("confidence", 0.0)),
+            "coverage_pct": self.metrics.coverage_pct,
+            "timestamp_ms": now_ms(),
+        }
+        self.metrics.signal_transmitted = True
+        self.blackboard.set(SIMULATION_RESCUE_SIGNAL, signal)
+        return signal
+
     def set_dynamic_obstacle(self, cell: Cell, occupied: bool) -> MapEditResult:
         """Apply a safe map edit and immediately invalidate/replan navigation."""
         try:
@@ -286,6 +342,10 @@ class SimulationController:
         if int(self.ground_truth[cell]) == requested_value:
             return MapEditResult(False, cell, occupied, "no_change")
 
+        if not occupied:
+            for obstacle_id, obstacle_cell in tuple(self.moving_obstacles.items()):
+                if obstacle_cell == cell:
+                    del self.moving_obstacles[obstacle_id]
         self.ground_truth[cell] = requested_value
         self.occupancy.set_cell(row, col, requested_value)
         self.metrics.dynamic_obstacle_changes += 1
@@ -336,6 +396,104 @@ class SimulationController:
             return MapEditResult(False, cell, None, "out_of_bounds")
         return self.set_dynamic_obstacle(cell, self.ground_truth[cell] != OCCUPIED)
 
+    def _moving_candidate_is_safe(self, old: Cell, new: Cell) -> bool:
+        row, col = new
+        if row in (0, GRID_HEIGHT - 1) or col in (0, GRID_WIDTH - 1):
+            return False
+        if new in {self.robot, self.scenario.victim} or self.ground_truth[new] != FREE:
+            return False
+        self.ground_truth[old] = FREE
+        self.ground_truth[new] = OCCUPIED
+        route_exists = dijkstra(
+            self.ground_truth, self.robot, self.scenario.victim
+        ).status == "ok"
+        self.ground_truth[new] = FREE
+        self.ground_truth[old] = OCCUPIED
+        return route_exists
+
+    def spawn_moving_obstacles(self, count: int = 1) -> int:
+        """Place deterministic moving hazards without making the victim unreachable."""
+        candidates = [
+            (row, col)
+            for row in range(1, GRID_HEIGHT - 1)
+            for col in range(1, GRID_WIDTH - 1)
+            if self.ground_truth[row, col] == FREE
+            and abs(row - self.robot[0]) + abs(col - self.robot[1]) >= 7
+            and abs(row - self.scenario.victim[0]) + abs(col - self.scenario.victim[1]) >= 4
+        ]
+        placed = 0
+        candidate_indices = self.rng.permutation(len(candidates)) if candidates else ()
+        for index in candidate_indices:
+            if placed >= count:
+                break
+            cell = candidates[int(index)]
+            self.ground_truth[cell] = OCCUPIED
+            if dijkstra(self.ground_truth, self.robot, self.scenario.victim).status != "ok":
+                self.ground_truth[cell] = FREE
+                continue
+            obstacle_id = self._next_moving_obstacle_id
+            self._next_moving_obstacle_id += 1
+            self.moving_obstacles[obstacle_id] = cell
+            self.occupancy.set_cell(*cell, OCCUPIED)
+            placed += 1
+        if placed:
+            self.blackboard.set(OCCUPANCY_GRID, self.occupancy.data.copy())
+        return placed
+
+    def advance_moving_obstacles(self, force: bool = False) -> int:
+        """Move autonomous obstacles and replan before the robot can move."""
+        if (
+            not self.moving_obstacles_enabled
+            or not self.moving_obstacles
+            or (not force and (self.metrics.steps + 1) % self.moving_obstacle_interval != 0)
+        ):
+            return 0
+        moved = 0
+        last_move = None
+        directions = ((-1, 0), (0, -1), (0, 1), (1, 0))
+        for obstacle_id in sorted(self.moving_obstacles):
+            old = self.moving_obstacles[obstacle_id]
+            for direction_index in self.rng.permutation(len(directions)):
+                dr, dc = directions[int(direction_index)]
+                new = old[0] + dr, old[1] + dc
+                if not self._moving_candidate_is_safe(old, new):
+                    continue
+                self.ground_truth[old] = FREE
+                self.ground_truth[new] = OCCUPIED
+                self.occupancy.set_cell(*old, FREE)
+                self.occupancy.set_cell(*new, OCCUPIED)
+                self.moving_obstacles[obstacle_id] = new
+                moved += 1
+                last_move = {"id": obstacle_id, "from": old, "cell": new}
+                break
+        if not moved:
+            return 0
+
+        self.metrics.moving_obstacle_moves += moved
+        self._last_plan_signature = None
+        target = self.blackboard.get(TARGET_WAYPOINT)
+        if (
+            target is not None
+            and tuple(target) in self.moving_obstacles.values()
+            and tuple(target) != self.scenario.victim
+        ):
+            self.blackboard.update_many({TARGET_WAYPOINT: None, PLANNED_PATH: []})
+            target = None
+        event = {
+            **last_move,
+            "reason": "moving_obstacle_moved",
+            "moves": moved,
+            "timestamp_ms": now_ms(),
+        }
+        self.blackboard.update_many({
+            OCCUPANCY_GRID: self.occupancy.data.copy(),
+            SIMULATION_MAP_EDIT: event,
+        })
+        if target is not None:
+            self._plan("moving_obstacle_moved")
+        self.blackboard.set(SIMULATION_METRICS, self.metrics.to_dict())
+        return moved
+
     def _victim_known_unreachable(self, detected: bool) -> bool:
         if not detected or self.blackboard.get(TARGET_WAYPOINT) is None:
             return False
@@ -353,6 +511,7 @@ class SimulationController:
         if self.terminated:
             return StepResult(True, self.metrics.termination_reason, 0, False)
         self._publish_mission()
+        self.advance_moving_obstacles()
         newly_explored, detected = self._publish_observation()
         self._plan()
         self.brain.tick_once()
@@ -367,6 +526,7 @@ class SimulationController:
             self.terminated = True
             self.metrics.rescued = True
             self.metrics.termination_reason = "victim_rescued"
+            self._publish_rescue_signal()
         elif self._victim_known_unreachable(detected):
             self.terminated = True
             self.metrics.termination_reason = "victim_unreachable"

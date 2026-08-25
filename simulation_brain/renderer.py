@@ -5,8 +5,12 @@ from __future__ import annotations
 import math
 from typing import Iterable
 
-from modules.decision_logic.contracts import DETECTION_RESULT, PATH_STATUS, PROXIMITY
+from modules.decision_logic.contracts import (
+    DETECTION_RESULT, PATH_STATUS, PROXIMITY, SIMULATION_MAP_EDIT,
+    SIMULATION_RESCUE_SIGNAL, now_ms,
+)
 from shared.coordinate_system import FREE, GRID_HEIGHT, GRID_WIDTH, OCCUPIED, UNKNOWN
+from simulation_brain.scenarios import HOUSE_ROOM_ANNOTATIONS
 from simulation_brain.visual_state import VisualPose, VisualSessionState
 
 
@@ -132,10 +136,38 @@ class SimulationRenderer:
                 if self.cell >= 11:
                     self.pg.draw.rect(self.screen, (126, 135, 142), rect, 1)
 
+    def _draw_room_labels(self, visual: VisualSessionState) -> None:
+        """Explain fixed architecture only in the explicit ground-truth view."""
+        if visual.view_mode != "truth":
+            return
+        for label, cell in HOUSE_ROOM_ANNOTATIONS.get(self.controller.scenario.name, ()):
+            center = self._cell_center(*cell)
+            surface = self.tiny.render(label, True, (45, 62, 70))
+            background = surface.get_rect(center=center).inflate(8, 4)
+            layer = self.pg.Surface(background.size, self.pg.SRCALPHA)
+            layer.fill((225, 236, 231, 175))
+            self.screen.blit(layer, background)
+            self.screen.blit(surface, surface.get_rect(center=center))
+
     def _draw_visited(self, visual: VisualSessionState) -> None:
         radius = max(1, self.cell // 5)
         for row, col in visual.visited:
             self.pg.draw.circle(self.screen, self.COLORS["visited"], self._cell_center(row, col), radius)
+
+    def _draw_moving_obstacles(self) -> None:
+        for obstacle_id, (row, col) in self.controller.moving_obstacles.items():
+            outer = self.pg.Rect(
+                self.map_origin[0] + col * self.cell,
+                self.map_origin[1] + row * self.cell,
+                self.cell,
+                self.cell,
+            )
+            inner = outer.inflate(-max(2, self.cell // 4), -max(2, self.cell // 4))
+            self.pg.draw.rect(self.screen, (244, 132, 55), outer, border_radius=2)
+            self.pg.draw.rect(self.screen, (255, 210, 100), inner, 1, border_radius=2)
+            if self.cell >= 10:
+                self.pg.draw.line(self.screen, (90, 48, 32), outer.topleft, outer.bottomright, 1)
+                self.pg.draw.line(self.screen, (90, 48, 32), outer.topright, outer.bottomleft, 1)
 
     def _draw_detection_radius(self, pose: VisualPose) -> None:
         radius = int(self.controller.config.victim_detection_range_cells * self.cell)
@@ -217,12 +249,32 @@ class SimulationRenderer:
         rotated = self.pg.transform.rotozoom(surface, pose.heading, 1.0)
         self.screen.blit(rotated, rotated.get_rect(center=self._cell_center(pose.row, pose.col)))
 
+    def _draw_signal_pulse(self, pose: VisualPose) -> None:
+        signal = self.controller.blackboard.get(SIMULATION_RESCUE_SIGNAL, {})
+        if not isinstance(signal, dict) or not signal.get("sent"):
+            return
+        center = self._cell_center(pose.row, pose.col)
+        phase = (self.pg.time.get_ticks() % 1_200) / 1_200.0
+        for offset in (0.0, 0.33, 0.66):
+            radius = max(5, int(self.cell * (0.7 + ((phase + offset) % 1.0) * 2.2)))
+            self.pg.draw.circle(self.screen, self.COLORS["success"], center, radius, 1)
+
     def _human_message(self, visual: VisualSessionState) -> str:
         if visual.notification:
             return visual.notification
+        map_event = self.controller.blackboard.get(SIMULATION_MAP_EDIT, {})
+        if (
+            isinstance(map_event, dict)
+            and map_event.get("reason") == "moving_obstacle_moved"
+            and now_ms() - map_event.get("timestamp_ms", 0) <= 1_500
+        ):
+            return (
+                f"Moving obstacle {map_event.get('id')} shifted to {map_event.get('cell')}; "
+                "Dijkstra checked the route again."
+            )
         if self.controller.terminated:
             return {
-                "victim_rescued": "Victim reached safely. Mission complete.",
+                "victim_rescued": "Victim located safely; rescue coordinates transmitted.",
                 "victim_unreachable": "Victim confirmed, but every safe approach is blocked.",
                 "map_fully_explored": "Exploration complete. No reachable mission target remains.",
                 "step_limit": "Time limit reached. Robot stopped safely.",
@@ -245,6 +297,85 @@ class SimulationRenderer:
         value_font = self.heading_font if value_surface.get_width() <= rect.width - 18 else self.small
         self._text(value, rect.x + 9, rect.y + 23, color=accent or self.COLORS["text"], font=value_font)
 
+    def _draw_system_pipeline(self, x: int, y: int, width: int) -> None:
+        behavior = self.controller.blackboard.get("decision/state", {}).get("active_behavior", "")
+        active = {
+            "RLExplore": 2, "VictimConfirmation": 2, "NavigateToTarget": 4,
+            "EmergencyStop": 2, "SafetyGate": 2,
+        }.get(behavior, 0)
+        path_status = self.controller.blackboard.get(PATH_STATUS, {})
+        if isinstance(path_status, dict) and now_ms() - path_status.get("timestamp_ms", 0) <= 500:
+            active = 3
+        labels = ("SENSE", "MAP", "BT", "DIJKSTRA", "MOVE")
+        gap = 4
+        item_width = max(34, (width - gap * (len(labels) - 1)) // len(labels))
+        for index, label in enumerate(labels):
+            rect = self.pg.Rect(x + index * (item_width + gap), y, item_width, 27)
+            color = self.COLORS["accent"] if index == active else (48, 60, 78)
+            self.pg.draw.rect(self.screen, color, rect, border_radius=5)
+            if index < len(labels) - 1:
+                arrow_x = rect.right + 1
+                self.pg.draw.line(self.screen, self.COLORS["muted"], (arrow_x, rect.centery), (arrow_x + 3, rect.centery), 1)
+            text_color = (18, 25, 32) if index == active else self.COLORS["text"]
+            text = self.tiny.render(label, True, text_color)
+            self.screen.blit(text, text.get_rect(center=rect.center))
+
+    def behavior_tree_rows(self) -> tuple[tuple[str, str, bool], ...]:
+        """Return presentation labels for the real priority-selector branches."""
+        state = self.controller.blackboard.get("decision/state", {})
+        active_behavior = state.get("active_behavior", "")
+        detection = self.controller.blackboard.get(DETECTION_RESULT, {})
+        confidence = float(detection.get("confidence", 0.0)) if isinstance(detection, dict) else 0.0
+        confirmed = confidence >= self.controller.config.victim_confirm_threshold
+        has_target = self.controller.blackboard.get("navigation/target_waypoint") is not None
+        policy_loaded = self.controller._policy is not None
+        definitions = (
+            ("Safety Gate", "SafetyGate", "HOLD", "CLEAR"),
+            ("Emergency Stop", "EmergencyStop", "STOP", "CLEAR"),
+            ("Victim Confirmation", "VictimConfirmation", "CONFIRMING", "CONFIRMED" if confirmed else "WAIT"),
+            ("Navigate to Target", "NavigateToTarget", "RUNNING", "READY" if has_target else "WAIT"),
+            (
+                "Explore / RL-ready", "RLExplore",
+                "PPO RUNNING" if policy_loaded else "HEURISTIC FALLBACK",
+                "PPO READY" if policy_loaded else "HEURISTIC READY",
+            ),
+            ("Idle", "Idle", "IDLE", "STANDBY"),
+        )
+        return tuple(
+            (label, active_status if active_behavior == behavior else inactive_status, active_behavior == behavior)
+            for label, behavior, active_status, inactive_status in definitions
+        )
+
+    def rl_policy_status(self) -> str:
+        if self.controller._policy is not None:
+            return "TRAINED PPO LOADED"
+        if self.controller.policy_load_error:
+            return "CHECKPOINT REJECTED — SAFE HEURISTIC FALLBACK"
+        return "NOT TRAINED — DETERMINISTIC FRONTIER HEURISTIC ACTIVE"
+
+    def _draw_behavior_tree(self, x: int, y: int, width: int) -> int:
+        self._text("BEHAVIOR TREE — PRIORITY SELECTOR", x, y, color=self.COLORS["warning"], font=self.tiny)
+        y += 17
+        row_height = 22
+        for index, (label, status, active) in enumerate(self.behavior_tree_rows(), start=1):
+            rect = self.pg.Rect(x + 13, y, width - 13, row_height - 2)
+            fill = self.COLORS["accent"] if active else (43, 53, 69)
+            self.pg.draw.rect(self.screen, fill, rect, border_radius=4)
+            self.pg.draw.line(
+                self.screen, self.COLORS["border"],
+                (x + 5, y - (2 if index > 1 else 0)), (x + 5, y + row_height // 2), 2,
+            )
+            self.pg.draw.line(
+                self.screen, self.COLORS["border"],
+                (x + 5, y + row_height // 2), (x + 13, y + row_height // 2), 2,
+            )
+            text_color = (18, 25, 32) if active else self.COLORS["text"]
+            self._text(f"{index}. {label}", rect.x + 7, rect.y + 3, color=text_color, font=self.tiny)
+            status_surface = self.tiny.render(status, True, text_color if active else self.COLORS["muted"])
+            self.screen.blit(status_surface, (rect.right - status_surface.get_width() - 7, rect.y + 3))
+            y += row_height
+        return y
+
     def _draw_dashboard(self, visual: VisualSessionState) -> None:
         rect = self.dashboard_rect
         self.pg.draw.rect(self.screen, self.COLORS["panel"], rect, border_radius=12)
@@ -253,57 +384,73 @@ class SimulationRenderer:
         self._text("RESCUE ROVER", x, y, color=self.COLORS["accent"], font=self.title_font)
         y += 34
         self._text(
-            f"{self.controller.scenario.name}  •  seed {self.controller.seed}  •  edits {self.controller.metrics.dynamic_obstacle_changes}",
-            x, y, color=self.COLORS["muted"], font=self.small,
+            f"{self.controller.scenario.name} • seed {self.controller.seed} • "
+            f"step {self.controller.metrics.steps} • replans {self.controller.metrics.replans}",
+            x, y, color=self.COLORS["muted"], font=self.tiny,
         )
-        y += 30
-        state = self.controller.blackboard.get("decision/state", {})
+        y += 20
+        self._draw_system_pipeline(x, y, rect.width - 32)
+        y += 37
+        y = self._draw_behavior_tree(x, y, rect.width - 32)
+        y += 7
         path_status = self.controller.blackboard.get(PATH_STATUS, {})
         metrics = self.controller.metrics.to_dict()
-        mission_value = (
-            "RESCUED" if self.controller.metrics.rescued
-            else "STOPPED" if self.controller.terminated
-            else state.get("mission_state", "run").upper()
-        )
+        detection = self.controller.blackboard.get(DETECTION_RESULT, {})
+        confidence = float(detection.get("confidence", 0.0)) if isinstance(detection, dict) else 0.0
         values = (
-            ("Mission", mission_value, self._status_color()),
-            ("Behavior", state.get("active_behavior", "Sensing"), None),
-            ("Policy", metrics["policy_source"].upper(), None),
-            ("Path cost", path_status.get("cost", "—"), self.COLORS["path"]),
+            ("WiFi signal", f"{confidence:.0%}", self.COLORS["victim"] if confidence >= self.controller.config.victim_confirm_threshold else None),
             ("Coverage", f"{metrics['coverage_pct']:.1f}%", None),
-            ("Detections", metrics["victim_detections"], None),
-            ("Replans", metrics["replans"], None),
+            ("Path cost", path_status.get("cost", "—"), self.COLORS["path"]),
             ("Collisions", metrics["collisions"], self.COLORS["success"] if not metrics["collisions"] else self.COLORS["danger"]),
         )
-        gap, card_height = 8, 50
+        gap, card_height = 7, 47
         card_width = (rect.width - 32 - gap) // 2
         for index, (label, value, accent) in enumerate(values):
             row, col = divmod(index, 2)
             card = self.pg.Rect(x + col * (card_width + gap), y + row * (card_height + gap), card_width, card_height)
             self._card(card, label, value, accent)
-        y += 4 * (card_height + gap) + 3
+        y += 2 * (card_height + gap) + 1
         self._text("CURRENT DECISION", x, y, color=self.COLORS["warning"], font=self.small)
         y += 20
         for line in self._wrap(self._human_message(visual), max(24, (rect.width - 32) // 8))[:3]:
             self._text(line, x, y, font=self.small)
             y += 18
         self._draw_controls(visual, x, max(y + 8, rect.bottom - 142))
-        self._text("Keys: Space/N/R/G/S/P/O  •  +/- speed", x, rect.bottom - 20, color=self.COLORS["muted"], font=self.tiny)
+        footer = (
+            "Keys: Enter/Space/N/R/G/H/L  •  Advanced: S/P/O/D +/-"
+            if visual.presentation_mode else "Keys: Space/N/R/G/S/P/O/D/H/L  •  +/- speed"
+        )
+        self._text(footer, x, rect.bottom - 20, color=self.COLORS["muted"], font=self.tiny)
 
     def _draw_controls(self, visual: VisualSessionState, x: int, y: int) -> None:
-        controls = (
-            ("pause", "Run" if visual.paused else "Pause"), ("step", "Step"),
-            ("reset", "Reset"), ("view", "Truth" if visual.view_mode == "perception" else "Perception"),
-            ("sensors", f"Sensors {'On' if visual.show_sensors else 'Off'}"),
-            ("path", f"Path {'On' if visual.show_path else 'Off'}"),
-            ("edit", f"Edit {'On' if visual.edit_obstacles else 'Off'}"),
-            ("slower", "Speed -"), ("faster", f"Speed + {visual.speed:g}x"),
-        )
+        if visual.presentation_mode:
+            controls = [
+                ("pause", "Run" if visual.paused else "Pause"), ("step", "Step"),
+                ("reset", "Reset"),
+                ("view", "Truth" if visual.view_mode == "perception" else "Perception"),
+                ("guide", "Guide"), ("rl", "RL Glimpse"),
+            ]
+        else:
+            controls = [
+                ("pause", "Run" if visual.paused else "Pause"), ("step", "Step"),
+                ("reset", "Reset"), ("view", "Truth" if visual.view_mode == "perception" else "Perception"),
+                ("sensors", f"Sensors {'On' if visual.show_sensors else 'Off'}"),
+                ("path", f"Path {'On' if visual.show_path else 'Off'}"),
+                ("edit", f"Edit {'On' if visual.edit_obstacles else 'Off'}"),
+                ("dynamic", (
+                    f"Moving {'On' if self.controller.moving_obstacles_enabled else 'Off'}"
+                    if self.controller.moving_obstacles else "Add Hazard"
+                )),
+                ("slower", "Speed -"), ("faster", f"Speed + {visual.speed:g}x"),
+            ]
         available, gap = self.dashboard_rect.width - 32, 6
-        button_width = (available - 2 * gap) // 3
+        columns = 5 if self.dashboard_rect.width >= 420 else 3
+        rows = math.ceil(len(controls) / columns)
+        y = max(y, self.dashboard_rect.bottom - rows * 34 - 35)
+        button_width = (available - (columns - 1) * gap) // columns
         self.button_rects = {}
         for index, (action, label) in enumerate(controls):
-            row, col = divmod(index, 3)
+            row, col = divmod(index, columns)
             rect = self.pg.Rect(x + col * (button_width + gap), y + row * 34, button_width, 28)
             self.button_rects[action] = rect
             self.pg.draw.rect(self.screen, (48, 60, 78), rect, border_radius=6)
@@ -317,6 +464,7 @@ class SimulationRenderer:
             ("Free", self.COLORS["free"]), ("Obstacle", self.COLORS["occupied"]),
             ("Unknown", self.COLORS["unknown"]), ("Dijkstra path", self.COLORS["path"]),
             ("Sensor rays", self.COLORS["sensor"]), ("Victim", self.COLORS["victim"]),
+            ("Moving hazard", (244, 132, 55)),
         )
         x = self.map_origin[0]
         for label, color in items:
@@ -337,12 +485,95 @@ class SimulationRenderer:
         self.screen.blit(overlay, (x, y))
         success = self.controller.metrics.rescued
         color = self.COLORS["success"] if success else self.COLORS["warning"]
-        title = "VICTIM RESCUED" if success else self.controller.metrics.termination_reason.replace("_", " ").upper()
+        title = (
+            "VICTIM LOCATED — SIGNAL TRANSMITTED"
+            if success and self.controller.metrics.signal_transmitted
+            else "VICTIM REACHED"
+            if success else self.controller.metrics.termination_reason.replace("_", " ").upper()
+        )
         title_surface = self.title_font.render(title, True, color)
+        if title_surface.get_width() > self.map_pixels - 30:
+            title_surface = self.heading_font.render(title, True, color)
         center_x, center_y = x + self.map_pixels // 2, y + self.map_pixels // 2
         self.screen.blit(title_surface, title_surface.get_rect(center=(center_x, center_y - 20)))
-        subtitle = self.font.render("Press R to replay this scenario", True, self.COLORS["text"])
-        self.screen.blit(subtitle, subtitle.get_rect(center=(center_x, center_y + 20)))
+        metrics = self.controller.metrics
+        details = (
+            f"{metrics.steps} steps  •  {metrics.coverage_pct:.1f}% coverage  •  "
+            f"{metrics.replans} replans  •  {metrics.collisions} collisions"
+        )
+        detail_surface = self.font.render(details, True, self.COLORS["text"])
+        self.screen.blit(detail_surface, detail_surface.get_rect(center=(center_x, center_y + 20)))
+        subtitle = self.small.render("R: replay same seed   •   H: presentation guide", True, self.COLORS["muted"])
+        self.screen.blit(subtitle, subtitle.get_rect(center=(center_x, center_y + 48)))
+
+    def _draw_presentation_overlay(self, visual: VisualSessionState) -> None:
+        if not (visual.show_intro or visual.show_guide or visual.show_rl_glimpse):
+            return
+        shade = self.pg.Surface((self.width, self.height), self.pg.SRCALPHA)
+        shade.fill((7, 12, 20, 218))
+        self.screen.blit(shade, (0, 0))
+        panel_width = min(860, self.width - 64)
+        panel_height = min(500, self.height - 64)
+        panel = self.pg.Rect(
+            (self.width - panel_width) // 2, (self.height - panel_height) // 2,
+            panel_width, panel_height,
+        )
+        self.pg.draw.rect(self.screen, self.COLORS["panel"], panel, border_radius=16)
+        self.pg.draw.rect(self.screen, self.COLORS["accent"], panel, 2, border_radius=16)
+        x, y = panel.x + 34, panel.y + 28
+        title = "PROJECT DRISHYA — MIDTERM SIMULATION"
+        self._text(title, x, y, color=self.COLORS["accent"], font=self.title_font)
+        y += 43
+        if visual.show_intro:
+            content = (
+                "MISSION", "An autonomous rescue rover explores an unknown building, avoids obstacles,",
+                "finds a hidden victim from simulated WiFi evidence, reaches them safely, and",
+                "transmits their confirmed location to the rescue team.", "",
+                "SYSTEM BOUNDARY", "This demonstration validates perception, mapping, decisions, Dijkstra",
+                "navigation, dynamic replanning, and RL readiness. Hardware comes later.", "",
+                "WHAT TO WATCH", "Gray space becomes mapped • cyan/purple rays are sensors • yellow is the",
+                "safe path • the dashboard explains every Behavior Tree decision.",
+            )
+        elif visual.show_guide:
+            content = (
+                "RECOMMENDED 4-MINUTE FLOW", "1. Enter — start in honest Robot Perception view.",
+                "2. Space then N — explain one sense/map/decide/move cycle.",
+                "3. G — reveal the fixed house and hidden victim; press G again.",
+                "4. O, then click ahead — demonstrate immediate Dijkstra replanning.",
+                "5. L — show the honest RL-ready interface, then resume the mission.",
+                "6. Finish with victim confirmation, transmitted coordinates, and metrics.", "",
+                "KEYS", "Space pause • N step • G truth • L RL glimpse • R reset",
+            )
+        else:
+            policy_status = self.rl_policy_status()
+            content = (
+                "RL READINESS — HONEST MIDTERM STATUS", policy_status, "",
+                "OBSERVATION", "2,517 values: perceived map, pose, proximity, coverage, frontiers,",
+                "WiFi confidence, masked victim direction, and previous collision.", "",
+                "ACTIONS", "Forward • Left • Backward • Right exploration preference", "",
+                "REWARD SIGNALS", "New map cells • victim confirmation • progress • rescue • collisions • timeout", "",
+                "DEPLOYMENT SAFETY", "PPO may suggest exploration. The Behavior Tree, obstacle validator, and",
+                "Dijkstra planner always retain authority over physical movement.",
+            )
+        for line in content:
+            is_heading = line in {
+                "MISSION", "SYSTEM BOUNDARY", "WHAT TO WATCH", "RECOMMENDED 4-MINUTE FLOW", "KEYS",
+                "RL READINESS — HONEST MIDTERM STATUS", "OBSERVATION", "ACTIONS", "REWARD SIGNALS",
+                "DEPLOYMENT SAFETY",
+            }
+            self._text(
+                line, x, y,
+                color=self.COLORS["warning"] if is_heading else self.COLORS["text"],
+                font=self.heading_font if is_heading else self.font,
+            )
+            y += 25 if is_heading else 21
+        prompt = (
+            "ENTER — START AUTONOMOUS MISSION" if visual.show_intro
+            else "H — RETURN TO SIMULATION" if visual.show_guide
+            else "L — RETURN TO SIMULATION"
+        )
+        prompt_surface = self.heading_font.render(prompt, True, self.COLORS["success"])
+        self.screen.blit(prompt_surface, prompt_surface.get_rect(center=(panel.centerx, panel.bottom - 35)))
 
     def action_at(self, position: tuple[int, int]) -> str | None:
         for action, rect in self.button_rects.items():
@@ -391,6 +622,8 @@ class SimulationRenderer:
         self._draw_map(visual)
         map_clip = self.pg.Rect(*self.map_origin, self.map_pixels, self.map_pixels)
         self.screen.set_clip(map_clip)
+        self._draw_moving_obstacles()
+        self._draw_room_labels(visual)
         self._draw_visited(visual)
         self._draw_detection_radius(pose)
         self._draw_sensors(visual, pose)
@@ -398,10 +631,12 @@ class SimulationRenderer:
         self._draw_victim(visual)
         self._draw_edit_overlay(visual)
         self._draw_rover(pose)
+        self._draw_signal_pulse(pose)
         self.screen.set_clip(None)
         self._draw_legend()
         self._draw_dashboard(visual)
         self._draw_completion(visual)
+        self._draw_presentation_overlay(visual)
         self.pg.display.flip()
 
     def close(self) -> None:
