@@ -1,25 +1,36 @@
+
+from pathlib import Path
 import sys
 import pygame
 
-print("1. Python started")
-
+from simulation.map_loader import MapLoader
 from config import *
 from constants import *
 from visualization.renderer import Renderer
 from visualization.camera import Camera
 
-print("2. Modules imported")
 
+# Load map data
+BASE_DIR = Path(__file__).resolve().parent
+map_path = BASE_DIR / "assets" / "maps" / "level1.json"
+
+map_loader = MapLoader(map_path)
+map_data = map_loader.load_map()
+
+print("Map loaded successfully!")
+print("Map name:", map_data["name"])
+print("Rows:", map_data["rows"])
+print("Columns:", map_data["cols"])
+
+
+# Initialize Pygame
 pygame.init()
-print("3. Pygame initialized")
 
 screen = pygame.display.set_mode(
     (SCREEN_WIDTH, SCREEN_HEIGHT)
 )
 
 pygame.display.set_caption(WINDOW_TITLE)
-
-print("4. Display created")
 
 clock = pygame.time.Clock()
 
@@ -31,29 +42,37 @@ camera = Camera(
     speed=400
 )
 
-print("5. Renderer and camera created")
-
 running = True
 
+# Main game loop
 while running:
 
     dt = clock.tick(FPS) / 1000
 
+    # Handle events
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
 
+    # Camera movement
     keys = pygame.key.get_pressed()
-
     camera.update(keys, dt)
 
+    # Clear screen
     screen.fill(BACKGROUND_COLOR)
 
-    for row in range(MAP_ROWS):
-        for col in range(MAP_COLS):
-            renderer.draw_tile(row, col, camera)
+    # Render map from JSON data
+    for row in range(map_data["rows"]):
+        for col in range(map_data["cols"]):
 
+            tile_type = map_data["tiles"][row][col]
+
+            if tile_type == 0:
+                renderer.draw_tile(row, col, camera)
+
+    # Update display
     pygame.display.flip()
+
 
 pygame.quit()
 sys.exit()
