@@ -5,32 +5,34 @@ from visualization.isometric import grid_to_screen
 
 
 class Renderer:
+
     def __init__(self, screen):
         self.screen = screen
 
-    def draw_tile(self, row, col, offset_x=600, offset_y=100):
-        """
-        Draw one isometric tile.
-        """
+    def draw_tile(self, row, col, camera):
 
+        # Convert grid coordinates to world coordinates
         x, y = grid_to_screen(row, col)
 
-        x += offset_x
-        y += offset_y
+        # Apply camera position
+        x, y = camera.apply(x, y)
 
+        # Define diamond corners
         points = [
             (x, y),
             (x + TILE_WIDTH // 2, y + TILE_HEIGHT // 2),
             (x, y + TILE_HEIGHT),
-            (x - TILE_WIDTH // 2, y + TILE_HEIGHT // 2),
+            (x - TILE_WIDTH // 2, y + TILE_HEIGHT // 2)
         ]
 
+        # Draw tile
         pygame.draw.polygon(
             self.screen,
             (120, 170, 120),
             points
         )
 
+        # Draw outline
         pygame.draw.polygon(
             self.screen,
             (40, 40, 40),
