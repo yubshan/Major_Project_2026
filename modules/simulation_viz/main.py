@@ -58,7 +58,7 @@ while running:
     keys = pygame.key.get_pressed()
     camera.update(keys, dt)
 
-    # Clear screen
+       # Clear screen
     screen.fill(BACKGROUND_COLOR)
 
     # Render map from JSON data
@@ -67,8 +67,16 @@ while running:
 
             tile_type = map_data["tiles"][row][col]
 
-            if tile_type == 0:
-                renderer.draw_tile(row, col, camera)
+            # Draw floor underneath every tile
+            renderer.draw_tile(row, col, camera)
+
+            # Draw wall on top of floor
+            if tile_type == TILE_WALL:
+                renderer.draw_wall(row, col, camera)
+
+            # Draw obstacle on top of floor
+            elif tile_type == TILE_OBSTACLE:
+                renderer.draw_obstacle(row, col, camera)
 
     # Update display
     pygame.display.flip()
@@ -76,3 +84,5 @@ while running:
 
 pygame.quit()
 sys.exit()
+
+   

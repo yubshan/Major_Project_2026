@@ -1,6 +1,8 @@
 
 import json
 
+from constants import TILE_FLOOR, TILE_WALL, TILE_OBSTACLE
+
 
 class MapLoader:
 
@@ -19,7 +21,9 @@ class MapLoader:
 
         for key in required_keys:
             if key not in data:
-                raise ValueError(f"Missing required map property: {key}")
+                raise ValueError(
+                    f"Missing required map property: {key}"
+                )
 
         # Validate map name
         if not isinstance(data["name"], str) or not data["name"].strip():
@@ -45,6 +49,13 @@ class MapLoader:
                 f"Expected {rows} rows, but found {len(tiles)}"
             )
 
+        # Validate each row and tile
+        valid_tile_types = (
+            TILE_FLOOR,
+            TILE_WALL,
+            TILE_OBSTACLE
+        )
+
         for row_index, row in enumerate(tiles):
 
             if not isinstance(row, list):
@@ -61,10 +72,11 @@ class MapLoader:
 
                 if not isinstance(tile, int) or isinstance(tile, bool):
                     raise ValueError(
-                        f"Invalid tile at row {row_index}, column {col_index}"
+                        f"Invalid tile at row {row_index}, "
+                        f"column {col_index}"
                     )
 
-                if tile != 0:
+                if tile not in valid_tile_types:
                     raise ValueError(
                         f"Unknown tile type {tile} at row {row_index}, "
                         f"column {col_index}"
