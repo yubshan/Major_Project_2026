@@ -51,7 +51,9 @@ robot = Robot(
     grid_row=1,
     grid_col=1
 )
+print("Starting position:", robot.grid_row, robot.grid_col)
 robot.rotate(180)
+
 
 
 
@@ -70,6 +72,8 @@ while running:
 
         # Robot movement: one tile per keypress
         if event.type == pygame.KEYDOWN:
+
+            print("Key pressed:", pygame.key.name(event.key))
 
             if event.key == pygame.K_i:
                 robot.move(-1, 0, map_data)
@@ -122,9 +126,21 @@ while running:
     # Draw rescue robot
     robot.draw(screen, camera, grid_to_screen)
 
+    # Display robot grid position
+    font = pygame.font.SysFont(None, 28)
+
+    position_text = font.render(
+        f"Robot Position: ({robot.grid_row}, {robot.grid_col})",
+        True,
+        (255, 255, 255)
+    )
+
+    screen.blit(position_text, (20, 20))
+
     # Update display
     pygame.display.flip()
 
 pygame.quit()
 sys.exit()
+
 

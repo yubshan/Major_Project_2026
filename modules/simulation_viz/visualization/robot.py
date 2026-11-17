@@ -37,9 +37,12 @@ class Robot:
             self.original_image,
             self.angle
         )
-    
+
     # Move robot on the grid
     def move(self, row_change, col_change, map_data):
+
+        # Display current position
+        print("Before:", self.grid_row, self.grid_col)
 
         # Calculate new grid position
         new_row = self.grid_row + row_change
@@ -52,7 +55,7 @@ class Robot:
         if not (0 <= new_col < map_data["cols"]):
             return
 
-        # Check whether the destination tile is blocked
+        # Check destination tile
         tile_type = map_data["tiles"][new_row][new_col]
 
         if tile_type == TILE_WALL or tile_type == TILE_OBSTACLE:
@@ -61,8 +64,24 @@ class Robot:
         # Update robot position
         self.grid_row = new_row
         self.grid_col = new_col
-    
 
+        # Automatically rotate robot based on movement
+        if row_change == -1:
+            self.rotate(0)
+
+        elif row_change == 1:
+            self.rotate(180)
+
+        elif col_change == -1:
+            self.rotate(90)
+
+        elif col_change == 1:
+            self.rotate(270)
+
+        # Display new position
+        print("After:", self.grid_row, self.grid_col)
+
+    # Draw robot
     def draw(self, screen, camera, grid_to_screen):
 
         # Convert grid position to screen coordinates
