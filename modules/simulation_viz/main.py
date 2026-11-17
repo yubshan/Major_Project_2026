@@ -8,6 +8,8 @@ from config import *
 from constants import *
 from visualization.renderer import Renderer
 from visualization.camera import Camera
+from visualization.robot import Robot
+from visualization.isometric import grid_to_screen
 
 
 # Load map data
@@ -41,10 +43,19 @@ camera = Camera(
     offset_y=100,
     speed=400
 )
+# Initialize rescue robot
+robot_image_path = BASE_DIR / "assets" / "robot" / "robot.png"
+
+robot = Robot(
+    robot_image_path,
+    grid_row=1,
+    grid_col=1
+)
 
 running = True
 
 # Main game loop
+
 while running:
 
     dt = clock.tick(FPS) / 1000
@@ -58,7 +69,7 @@ while running:
     keys = pygame.key.get_pressed()
     camera.update(keys, dt)
 
-       # Clear screen
+    # Clear screen
     screen.fill(BACKGROUND_COLOR)
 
     # Render map from JSON data
@@ -78,9 +89,11 @@ while running:
             elif tile_type == TILE_OBSTACLE:
                 renderer.draw_obstacle(row, col, camera)
 
+    # Draw rescue robot after rendering the map
+    robot.draw(screen, camera, grid_to_screen)
+
     # Update display
     pygame.display.flip()
-
 
 pygame.quit()
 sys.exit()
