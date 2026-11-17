@@ -51,45 +51,75 @@ robot = Robot(
     grid_row=1,
     grid_col=1
 )
+robot.rotate(180)
+
+
 
 running = True
 
 # Main game loop
-
 while running:
 
     dt = clock.tick(FPS) / 1000
 
     # Handle events
     for event in pygame.event.get():
+
         if event.type == pygame.QUIT:
             running = False
 
-    # Camera movement
+        # Robot movement: one tile per keypress
+        if event.type == pygame.KEYDOWN:
+
+            if event.key == pygame.K_i:
+                robot.move(-1, 0, map_data)
+
+            elif event.key == pygame.K_k:
+                robot.move(1, 0, map_data)
+
+            elif event.key == pygame.K_j:
+                robot.move(0, -1, map_data)
+
+            elif event.key == pygame.K_l:
+                robot.move(0, 1, map_data)
+
+    # Get keyboard input
     keys = pygame.key.get_pressed()
+
+    # Camera movement using WASD
     camera.update(keys, dt)
+
+    # Robot rotation using arrow keys
+    if keys[pygame.K_UP]:
+        robot.rotate(0)
+
+    elif keys[pygame.K_RIGHT]:
+        robot.rotate(270)
+
+    elif keys[pygame.K_DOWN]:
+        robot.rotate(180)
+
+    elif keys[pygame.K_LEFT]:
+        robot.rotate(90)
 
     # Clear screen
     screen.fill(BACKGROUND_COLOR)
 
-    # Render map from JSON data
+    # Render map
     for row in range(map_data["rows"]):
         for col in range(map_data["cols"]):
 
             tile_type = map_data["tiles"][row][col]
 
-            # Draw floor underneath every tile
             renderer.draw_tile(row, col, camera)
 
-            # Draw wall on top of floor
             if tile_type == TILE_WALL:
                 renderer.draw_wall(row, col, camera)
 
-            # Draw obstacle on top of floor
             elif tile_type == TILE_OBSTACLE:
                 renderer.draw_obstacle(row, col, camera)
 
-    # Draw rescue robot after rendering the map
+    # Draw rescue robot
     robot.draw(screen, camera, grid_to_screen)
 
     # Update display
@@ -98,4 +128,3 @@ while running:
 pygame.quit()
 sys.exit()
 
-   

@@ -7,24 +7,21 @@ class Camera:
         self.offset_y = offset_y
 
         self.speed = speed
-
     def update(self, keys, dt):
+     movement = self.speed * dt
 
-        movement = self.speed * dt
+     if keys[pygame.K_a]:
+        self.offset_x -= movement
 
-        # Horizontal movement
-        if keys[pygame.K_LEFT] or keys[pygame.K_a]:
-            self.offset_x -= movement
+     if keys[pygame.K_d]:
+        self.offset_x += movement
 
-        if keys[pygame.K_RIGHT] or keys[pygame.K_d]:
-            self.offset_x += movement
+     if keys[pygame.K_w]:
+        self.offset_y -= movement
 
-        # Vertical movement
-        if keys[pygame.K_UP] or keys[pygame.K_w]:
-            self.offset_y -= movement
+     if keys[pygame.K_s]:
+        self.offset_y += movement
 
-        if keys[pygame.K_DOWN] or keys[pygame.K_s]:
-            self.offset_y += movement
 
     def apply(self, x, y):
 
