@@ -52,7 +52,7 @@ robot = Robot(
     grid_col=1
 )
 print("Starting position:", robot.grid_row, robot.grid_col)
-robot.rotate(180)
+robot.rotate(0)
 
 
 
@@ -64,47 +64,41 @@ while running:
 
     dt = clock.tick(FPS) / 1000
 
+   
+    
     # Handle events
     for event in pygame.event.get():
 
         if event.type == pygame.QUIT:
             running = False
 
-        # Robot movement: one tile per keypress
-        if event.type == pygame.KEYDOWN:
-
-            print("Key pressed:", pygame.key.name(event.key))
+        elif event.type == pygame.KEYDOWN:
 
             if event.key == pygame.K_i:
-                robot.move(-1, 0, map_data)
-
-            elif event.key == pygame.K_k:
-                robot.move(1, 0, map_data)
+                robot.forward_held = True
 
             elif event.key == pygame.K_j:
-                robot.move(0, -1, map_data)
+                robot.turn_left()
 
             elif event.key == pygame.K_l:
-                robot.move(0, 1, map_data)
+                robot.turn_right()
+
+        elif event.type == pygame.KEYUP:
+
+            if event.key == pygame.K_i:
+                robot.forward_held = False
+
 
     # Get keyboard input
     keys = pygame.key.get_pressed()
 
     # Camera movement using WASD
     camera.update(keys, dt)
-
-    # Robot rotation using arrow keys
-    if keys[pygame.K_UP]:
-        robot.rotate(0)
-
-    elif keys[pygame.K_RIGHT]:
-        robot.rotate(270)
-
-    elif keys[pygame.K_DOWN]:
-        robot.rotate(180)
-
-    elif keys[pygame.K_LEFT]:
-        robot.rotate(90)
+    # Update robot smooth movement
+    robot.update(dt)
+    # Continue moving while I is held
+    if robot.forward_held and not robot.is_moving:
+     robot.move_forward(map_data)
 
     # Clear screen
     screen.fill(BACKGROUND_COLOR)
